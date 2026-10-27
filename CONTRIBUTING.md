@@ -42,10 +42,17 @@ Exemplo: `feat: abrir arquivo do diff no visualizador`
 
 ## Pull requests
 
-1. Crie uma branch a partir da `main` (`feat/...`, `fix/...`).
+1. Crie uma branch a partir da `dev` (`feat/...`, `fix/...`).
 2. Garanta que `npm run build` e o `cargo check` passam **sem warnings**.
-3. Abra o PR descrevendo o que mudou e como testar. Prints ou GIFs ajudam muito em mudanças visuais.
-4. Ao mergear na `main`, o CI cria a release com o `.deb` e mantém só as 3 últimas.
+3. Abra o PR **para a `dev`**, descrevendo o que mudou e como testar. Prints ou GIFs ajudam muito em mudanças visuais.
+   O CI compila o `.deb` no PR, como check; nada é publicado.
+
+### Branches e releases
+
+- **`dev`**: integração. Os PRs de feature e correção entram aqui. Merge na `dev` não gera release.
+- **`main`**: só recebe o PR `dev → main`. Cada merge nela gera uma release com tudo que acumulou na `dev`:
+  o CI cria a versão, compila o `.deb`, anexa na release e mantém só as 3 últimas.
+- **A `dev` nunca é apagada.** No merge do PR `dev → main`, não clique em "Delete branch".
 
 ## Estilo
 

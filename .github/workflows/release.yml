@@ -1,5 +1,6 @@
 name: Release
 
+# Release só no push na main, que só recebe o PR dev -> main (as features entram na dev).
 on:
   push:
     branches: [main]

@@ -53,5 +53,6 @@ src-tauri/src/
 ## Git e releases
 
 - **Conventional Commits** (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`): o semantic-release calcula a versão a partir deles.
-- Nunca commitar direto na `main`: todo push na `main` gera release, compila o `.deb` e apaga as releases além das 3 mais recentes. Em PR o workflow só compila o `.deb` (não publica nada).
+- **Branches:** PRs de feature/correção partem da `dev` e voltam pra `dev`. A `main` só recebe o PR `dev → main`, e cada merge nela gera release (compila o `.deb` e apaga as releases além das 3 mais recentes). Em PR o workflow só compila o `.deb`.
+- Nunca commitar direto na `dev` nem na `main`, e nunca apagar a `dev` (nem com `--delete-branch` no merge `dev → main`).
 - Commit e push só quando o usuário pedir.
