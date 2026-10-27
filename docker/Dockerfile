@@ -1,5 +1,5 @@
 # Mesmo Ubuntu do CI (release.yml), pra o que funciona aqui funcionar lá.
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -14,7 +14,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Usuário com o mesmo UID/GID do host: os arquivos criados no projeto não ficam com dono root.
 ARG UID=1000
 ARG GID=1000
-RUN groupadd -g ${GID} dev && useradd -m -u ${UID} -g ${GID} -s /bin/bash dev \
+# A imagem 24.04 já vem com o usuário "ubuntu" no UID 1000: sai pra dar lugar ao dev.
+RUN (userdel -r ubuntu 2>/dev/null || true) \
+    && groupadd -g ${GID} dev && useradd -m -u ${UID} -g ${GID} -s /bin/bash dev \
     && mkdir -p /app/node_modules /app/src-tauri/target \
     && chown -R dev:dev /app \
     && install -d -m 0700 -o dev -g dev /tmp/runtime

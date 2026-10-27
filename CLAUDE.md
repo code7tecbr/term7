@@ -7,7 +7,7 @@ A v1 é web-based de propósito; a v2 planeja migrar pra renderização nativa e
 
 ```sh
 npm run build                     # type-check (vue-tsc) + build do frontend; rode depois de mexer em src/
-docker compose run --rm build     # compila o .deb em dist-deb/ (mesmo Ubuntu 22.04 do CI)
+docker compose run --rm build     # compila o .deb em dist-deb/ (mesmo Ubuntu 24.04 do CI)
 scripts/install-local.sh          # instala o .deb em ~/.local (sem sudo) pra testar de verdade
 docker compose run --rm --no-deps dev bash -c "cd src-tauri && cargo check"   # checa só o Rust
 ```
@@ -53,5 +53,5 @@ src-tauri/src/
 ## Git e releases
 
 - **Conventional Commits** (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`): o semantic-release calcula a versão a partir deles.
-- Nunca commitar direto na `main`: todo push na `main` gera release, compila o `.deb` e apaga as releases além das 3 mais recentes.
+- Nunca commitar direto na `main`: todo push na `main` gera release, compila o `.deb` e apaga as releases além das 3 mais recentes. Em PR o workflow só compila o `.deb` (não publica nada).
 - Commit e push só quando o usuário pedir.
