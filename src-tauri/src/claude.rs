@@ -19,15 +19,32 @@ use crate::pty::PtyState;
 /// Marca que identifica os hooks do term7 no settings.json (pra atualizar/remover).
 const MARKER: &str = "TERM7_PANE";
 
-/// Evento do Claude Code -> estado da aba. None = sessão acabou (apaga o arquivo).
-const EVENTS: &[(&str, Option<&str>)] = &[
-    ("UserPromptSubmit", Some("working")),
+/// Evento do Claude Code (com matcher opcional) -> estado da aba.
+/// None = apaga o arquivo (sessão nova ou encerrada).
+const EVENTS: &[(&str, Option<&str>, Option<&str>)] = &[
+    // Sessão nova (inclusive depois de /clear) começa sem estado.
+    ("SessionStart", None, None),
+    ("UserPromptSubmit", None, Some("working")),
     // Depois de uma permissão aprovada a ferramenta roda: volta a "trabalhando".
-    ("PostToolUse", Some("working")),
-    ("Notification", Some("waiting")),
-    ("Stop", Some("done")),
-    ("SessionEnd", None),
+    ("PostToolUse", None, Some("working")),
+    // Só o que de fato espera você. Sem filtro entrava o idle_prompt, que chega
+    // ~60 s depois de terminar e deixava a aba "esperando" pra sempre.
+    (
+        "Notification",
+        Some("permission_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input"),
+        Some("waiting"),
+    ),
+    ("Stop", None, Some("done")),
+    ("SessionEnd", None, None),
 ];
+
+fn hook_entry(matcher: Option<&str>, state: Option<&str>) -> Value {
+    let mut entry = json!({ "hooks": [{ "type": "command", "command": hook_command(state) }] });
+    if let Some(m) = matcher {
+        entry["matcher"] = json!(m);
+    }
+    entry
+}
 
 /// Id da aba visto pelos hooks. Leva o PID do app pra duas janelas (ou um
 /// reinício) não lerem o arquivo uma da outra.
@@ -118,11 +135,19 @@ fn is_ours(entry: &Value) -> bool {
 }
 
 fn installed(settings: &Value) -> bool {
-    EVENTS.iter().all(|(event, state)| {
-        settings["hooks"][event].as_array().is_some_and(|entries| {
-            entries.iter().any(|e| is_ours(e) && e["hooks"][0]["command"] == hook_command(*state).as_str())
-        })
+    EVENTS.iter().all(|(event, matcher, state)| {
+        let expected = hook_entry(*matcher, *state);
+        settings["hooks"][event]
+            .as_array()
+            .is_some_and(|entries| entries.iter().any(|e| is_ours(e) && *e == expected))
     })
+}
+
+/// Tem algum hook do term7, mesmo que de uma versão antiga.
+fn has_ours(settings: &Value) -> bool {
+    settings["hooks"]
+        .as_object()
+        .is_some_and(|hooks| hooks.values().filter_map(Value::as_array).flatten().any(is_ours))
 }
 
 /// Coloca (ou atualiza) os hooks do term7, sem mexer nos outros hooks nem no resto do arquivo.
@@ -131,11 +156,15 @@ fn install(path: &Path) -> Result<(), String> {
     let root = settings.as_object_mut().ok_or("settings.json não é um objeto")?;
     let hooks = root.entry("hooks").or_insert_with(|| Value::Object(Map::new()));
     let hooks = hooks.as_object_mut().ok_or("\"hooks\" no settings.json não é um objeto")?;
-    for (event, state) in EVENTS {
+    // Tira os do term7 de todos os eventos (inclusive de eventos que deixaram de ser usados).
+    for entries in hooks.values_mut().filter_map(Value::as_array_mut) {
+        entries.retain(|e| !is_ours(e));
+    }
+    hooks.retain(|_, v| v.as_array().is_none_or(|a| !a.is_empty()));
+    for (event, matcher, state) in EVENTS {
         let entries = hooks.entry(*event).or_insert_with(|| Value::Array(vec![]));
         let entries = entries.as_array_mut().ok_or(format!("\"hooks.{event}\" não é uma lista"))?;
-        entries.retain(|e| !is_ours(e));
-        entries.push(json!({ "hooks": [{ "type": "command", "command": hook_command(*state) }] }));
+        entries.push(hook_entry(*matcher, *state));
     }
 
     if let Some(dir) = path.parent() {
@@ -160,7 +189,13 @@ pub struct HooksStatus {
 }
 
 fn status(path: PathBuf) -> Result<HooksStatus, String> {
-    let installed = installed(&read_settings(&path)?);
+    let settings = read_settings(&path)?;
+    // Já ativou antes, mas com hooks de uma versão antiga: atualiza sozinho.
+    if has_ours(&settings) && !installed(&settings) {
+        install(&path)?;
+        return status(path);
+    }
+    let installed = installed(&settings);
     Ok(HooksStatus { installed, settings_path: path.to_string_lossy().into_owned() })
 }
 
@@ -204,6 +239,7 @@ mod tests {
 
         install(&path).unwrap();
         install(&path).unwrap(); // instalar de novo não duplica
+        assert!(has_ours(&read_settings(&path).unwrap()));
 
         let s = read_settings(&path).unwrap();
         assert!(installed(&s));
@@ -214,6 +250,31 @@ mod tests {
         // A ordem das chaves do arquivo original é mantida.
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(text.find("\"model\"").unwrap() < text.find("\"hooks\"").unwrap());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn notification_ignora_o_idle_prompt() {
+        let entry = hook_entry(EVENTS[3].1, EVENTS[3].2);
+        assert_eq!(EVENTS[3].0, "Notification");
+        let matcher = entry["matcher"].as_str().unwrap();
+        assert!(matcher.contains("permission_prompt"));
+        assert!(!matcher.contains("idle_prompt"));
+    }
+
+    #[test]
+    fn atualiza_hooks_antigos() {
+        let dir = std::env::temp_dir().join(format!("term7-test-old-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        // Instalação da versão anterior: Notification sem matcher e sem SessionStart.
+        let old = json!({ "hooks": { "Notification": [{ "hooks": [{ "type": "command", "command": hook_command(Some("waiting")) }] }] } });
+        std::fs::write(&path, old.to_string()).unwrap();
+        let st = status(path.clone()).unwrap();
+        assert!(st.installed);
+        let s = read_settings(&path).unwrap();
+        assert_eq!(s["hooks"]["Notification"].as_array().unwrap().len(), 1);
+        assert!(s["hooks"]["SessionStart"].is_array());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
