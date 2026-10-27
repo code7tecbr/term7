@@ -54,10 +54,11 @@ jobs:
       # O apt instala normalmente a partir deles; cachear os arquivos já instalados
       # (cache-apt-pkgs-action) quebrava os links .so dos pacotes -dev.
       - name: Cache dos pacotes do apt
-        uses: actions/cache@v6
+        id: apt-cache
+        uses: actions/cache/restore@v6
         with:
           path: ~/apt-archives
-          key: apt-${{ runner.os }}-24.04-${{ hashFiles('.github/workflows/release.yml') }}
+          key: apt-${{ runner.os }}-24.04-${{ github.run_id }}
           restore-keys: apt-${{ runner.os }}-24.04-
       - name: Dependências de sistema do Tauri
         timeout-minutes: 10
@@ -65,6 +66,10 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
         run: |
           mkdir -p ~/apt-archives/partial
+          # O runner baixa do espelho da Azure, que às vezes fica lentíssimo nos pacotes.
+          # O archive.ubuntu.com vem primeiro; a Azure fica de reserva se ele falhar.
+          printf 'http://archive.ubuntu.com/ubuntu/\tpriority:1\nhttp://azure.archive.ubuntu.com/ubuntu/\tpriority:2\n' |
+            sudo tee /etc/apt/apt-mirrors.txt
           # Conexão parada falha em 30 s e tenta de novo, em vez de travar o job.
           APT="-o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Dir::Cache::Archives=$HOME/apt-archives"
           sudo apt-get update $APT
@@ -72,6 +77,13 @@ jobs:
             libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
           # O cache é salvo pelo usuário do runner: tira os arquivos do root.
           sudo chown -R "$USER" ~/apt-archives
+      # Salva mesmo se o apt falhar: o que já baixou serve na próxima run.
+      - name: Salva o cache do apt
+        if: always()
+        uses: actions/cache/save@v6
+        with:
+          path: ~/apt-archives
+          key: ${{ steps.apt-cache.outputs.cache-primary-key }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
         with:
