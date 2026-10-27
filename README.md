@@ -70,8 +70,13 @@ A cada push na `main`, o workflow `.github/workflows/release.yml` cria a release
 - [x] Terminal inferior por aba (`Ctrl+'`)
 - [x] Painel de diff do git (`Ctrl+Shift+G`) e visualizador de arquivo
 - [x] Troca de branch pela barra de status
-- [ ] Integração com o Claude CLI (aviso quando termina, Shift+Enter, comentar no diff)
-- [ ] Blocos de comando (comando + saída agrupados)
-- [ ] Paleta de comandos (Ctrl+Shift+P)
-- [ ] Temas e config
-- [ ] v2: migrar pra renderização nativa em Rust (GPU)
+
+O que falta está nas [issues](https://github.com/code7tecbr/term7/issues):
+
+- **Claude CLI** ([label `claude-cli`](https://github.com/code7tecbr/term7/issues?q=is%3Aissue+label%3Aclaude-cli)):
+  aviso ao terminar ([#8](https://github.com/code7tecbr/term7/issues/8)), Shift+Enter ([#9](https://github.com/code7tecbr/term7/issues/9)), comentar no diff ([#10](https://github.com/code7tecbr/term7/issues/10)), sessão em worktree ([#11](https://github.com/code7tecbr/term7/issues/11))
+- **Terminal:** caminhos clicáveis ([#1](https://github.com/code7tecbr/term7/issues/1)), blocos de comando ([#2](https://github.com/code7tecbr/term7/issues/2)), paleta de comandos ([#3](https://github.com/code7tecbr/term7/issues/3))
+- **Visual:** temas e config ([#4](https://github.com/code7tecbr/term7/issues/4)), ícone definitivo ([#5](https://github.com/code7tecbr/term7/issues/5))
+- **Visualizador:** edição de arquivo ([#6](https://github.com/code7tecbr/term7/issues/6))
+- **Plataformas:** macOS e Windows ([#7](https://github.com/code7tecbr/term7/issues/7))
+- **v2:** renderização nativa em Rust ([#12](https://github.com/code7tecbr/term7/issues/12))
