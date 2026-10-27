@@ -50,14 +50,15 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v7
-      # Cacheia os .deb baixados: o espelho do apt às vezes trava por vários minutos.
+      # apt direto: a cache-apt-pkgs-action não recria os links .so dos pacotes -dev e o link falha.
       - name: Dependências de sistema do Tauri
-        uses: awalsh128/cache-apt-pkgs-action@v1.6.3
         timeout-minutes: 10
-        with:
-          packages: libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
-          # Mudar aqui invalida o cache (ex.: pra forçar baixar de novo).
-          version: 2
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get update -o Acquire::Retries=3
+          sudo apt-get install -y -o Acquire::Retries=3 libwebkit2gtk-4.1-dev build-essential \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
         with:
