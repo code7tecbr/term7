@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name={{name}}
+Comment={{comment}}
+Exec={{exec}}
+Icon={{icon}}
+Terminal=false
+Categories=System;TerminalEmulator;Development;
+Keywords=terminal;shell;prompt;command;claude;
+StartupNotify=true
+StartupWMClass=br.tec.code7.term7

@@ -1,0 +1,17 @@
+[package]
+name = "term7"
+version = "0.1.0"
+description = "Terminal com interface moderna"
+edition = "2021"
+
+[lib]
+name = "term7_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+portable-pty = "0.9"
+serde = { version = "1", features = ["derive"] }

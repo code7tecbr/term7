@@ -1,0 +1,54 @@
+# Uso:
+#   docker compose run --rm build   -> gera o .deb em ./dist-deb/
+#   docker compose run --rm dev     -> abre o app na sua tela (hot reload)
+
+x-base: &base
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+    args:
+      UID: ${UID:-1000}
+      GID: ${GID:-1000}
+  image: term7-dev
+  volumes:
+    - .:/app
+    # Ficam em volumes do Docker pra não misturar com os do host e pra cache entre execuções.
+    - node_modules:/app/node_modules
+    - target:/app/src-tauri/target
+    - cargo-registry:/home/dev/.cargo/registry
+
+services:
+  build:
+    <<: *base
+    command: >
+      bash -c "npm ci && npx tauri build --bundles deb
+      && mkdir -p dist-deb && cp src-tauri/target/release/bundle/deb/*.deb dist-deb/"
+
+  dev:
+    <<: *base
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+      - target:/app/src-tauri/target
+      - cargo-registry:/home/dev/.cargo/registry
+      # Janela: usa o socket Wayland do host (com X11 de reserva).
+      - ${XDG_RUNTIME_DIR:-/run/user/1000}/${WAYLAND_DISPLAY:-wayland-0}:/tmp/runtime/${WAYLAND_DISPLAY:-wayland-0}
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+    environment:
+      XDG_RUNTIME_DIR: /tmp/runtime
+      WAYLAND_DISPLAY: ${WAYLAND_DISPLAY:-wayland-0}
+      DISPLAY: ${DISPLAY:-:0}
+      # Evita janela em branco do WebKitGTK dentro de container.
+      WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+    devices:
+      - /dev/dri:/dev/dri
+    # GIDs dos grupos video/render do host (veja com: stat -c %g /dev/dri/renderD128).
+    group_add:
+      - "${VIDEO_GID:-44}"
+      - "${RENDER_GID:-110}"
+    command: bash -c "npm ci && npm run tauri dev"
+
+volumes:
+  node_modules:
+  target:
+  cargo-registry:
