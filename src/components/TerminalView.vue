@@ -5,6 +5,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { spawnPty, type PtySession } from "../lib/pty";
 import { matchShortcut } from "../lib/shortcuts";
+import { isTextKey, routeTextInput } from "../lib/textInput";
 import { term7Dark } from "../lib/theme";
 
 const props = defineProps<{ cwd: string | null; focused: boolean }>();
@@ -103,8 +104,12 @@ onMounted(async () => {
   loadWebgl(t);
   fit.fit();
 
-  // Atalhos do app não chegam no shell.
-  t.attachCustomKeyEventHandler((e) => !handleClipboard(e, t) && !handleShiftEnter(e) && matchShortcut(e) === null);
+  // Atalhos do app não chegam no shell. Texto (incluindo acentos) não vai pelo
+  // keydown: chega pelo routeTextInput, a partir do que o sistema digitou.
+  t.attachCustomKeyEventHandler(
+    (e) => !handleClipboard(e, t) && !handleShiftEnter(e) && matchShortcut(e) === null && !isTextKey(e),
+  );
+  routeTextInput(t, container.value!, (text) => session?.write(text));
 
   session = await spawnPty({
     cols: t.cols,
