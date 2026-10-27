@@ -50,15 +50,28 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v7
-      # apt direto: a cache-apt-pkgs-action não recria os links .so dos pacotes -dev e o link falha.
+      # Cacheia só os .deb baixados (o espelho da Azure às vezes fica lento ou para no meio).
+      # O apt instala normalmente a partir deles; cachear os arquivos já instalados
+      # (cache-apt-pkgs-action) quebrava os links .so dos pacotes -dev.
+      - name: Cache dos pacotes do apt
+        uses: actions/cache@v6
+        with:
+          path: ~/apt-archives
+          key: apt-${{ runner.os }}-24.04-${{ hashFiles('.github/workflows/release.yml') }}
+          restore-keys: apt-${{ runner.os }}-24.04-
       - name: Dependências de sistema do Tauri
         timeout-minutes: 10
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get update -o Acquire::Retries=3
-          sudo apt-get install -y -o Acquire::Retries=3 libwebkit2gtk-4.1-dev build-essential \
+          mkdir -p ~/apt-archives/partial
+          # Conexão parada falha em 30 s e tenta de novo, em vez de travar o job.
+          APT="-o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Dir::Cache::Archives=$HOME/apt-archives"
+          sudo apt-get update $APT
+          sudo apt-get install -y $APT libwebkit2gtk-4.1-dev build-essential \
             libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+          # O cache é salvo pelo usuário do runner: tira os arquivos do root.
+          sudo chown -R "$USER" ~/apt-archives
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
         with:
