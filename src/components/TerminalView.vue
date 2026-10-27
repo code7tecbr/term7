@@ -39,6 +39,18 @@ async function loadFont(family: string) {
   }
 }
 
+/**
+ * Shift+Enter manda ESC + CR, que o Claude CLI entende como nova linha (sem
+ * precisar do /terminal-setup). No zsh vira quebra de linha no comando.
+ * Retorna true se tratou a tecla.
+ */
+function handleShiftEnter(e: KeyboardEvent) {
+  if (e.key !== "Enter" || !e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return false;
+  // Bloqueia também o keypress, senão o xterm manda o \r depois.
+  if (e.type === "keydown") session?.write("\x1b\r");
+  return true;
+}
+
 /** Ctrl+Shift+C / Ctrl+Shift+V. Retorna true se tratou a tecla. */
 function handleClipboard(e: KeyboardEvent, t: Terminal) {
   if (e.type !== "keydown" || !e.ctrlKey || !e.shiftKey || e.altKey) return false;
@@ -92,7 +104,7 @@ onMounted(async () => {
   fit.fit();
 
   // Atalhos do app não chegam no shell.
-  t.attachCustomKeyEventHandler((e) => !handleClipboard(e, t) && matchShortcut(e) === null);
+  t.attachCustomKeyEventHandler((e) => !handleClipboard(e, t) && !handleShiftEnter(e) && matchShortcut(e) === null);
 
   session = await spawnPty({
     cols: t.cols,
