@@ -7,10 +7,22 @@ const URL_RE = /https?:\/\/[^\s"'<>`]*[^\s"'<>`.,;:!?)\]}]/g;
 const LINK_COLOR = "#7aa2f7";
 
 /**
- * Links na saída do terminal: cursor de mão e sublinhado no hover, clique abre
- * no navegador, e a cor fica sempre visível nos links da tela.
+ * Links na saída do terminal (inclusive do Claude CLI): cursor de mão e
+ * sublinhado no hover, clique abre no navegador, e a cor fica sempre visível
+ * nas URLs da tela.
  */
 export function attachLinks(term: Terminal) {
+  // Hyperlinks OSC 8 (o Claude CLI usa: o texto pode ser "#580" e o endereço fica escondido).
+  // Sem handler o xterm não abre nada; com ele, hover sublinha e o clique abre.
+  term.options.linkHandler = {
+    activate: (event, uri) => {
+      event.preventDefault();
+      openUrl(uri).catch(() => {});
+    },
+    allowNonHttpProtocols: false,
+  };
+
+  // URLs em texto puro.
   term.loadAddon(
     new WebLinksAddon((event, uri) => {
       event.preventDefault();
