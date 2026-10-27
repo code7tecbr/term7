@@ -14,7 +14,8 @@ O `.deb` já declara os dois como dependência, então o `apt` instala junto. De
 gh auth login
 ```
 
-O `gh` dos repositórios do Ubuntu 22.04 (2.4) funciona; o do [repositório oficial](https://github.com/cli/cli/blob/trunk/docs/install_linux.md) também.
+O `.deb` é compilado no Ubuntu 24.04 e instala no 24.04 ou mais novo (Pop!_OS 24.04 incluído).
+O `gh` dos repositórios do Ubuntu funciona; o do [repositório oficial](https://github.com/cli/cli/blob/trunk/docs/install_linux.md) também.
 
 Pra desenvolver:
 

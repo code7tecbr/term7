@@ -3,18 +3,21 @@ name: Release
 on:
   push:
     branches: [main]
+  # Em PR só compila o .deb (sem versão, sem publicar): mostra se quebra antes do merge.
+  pull_request:
 
 permissions:
   contents: write
 
-# Nunca roda duas releases ao mesmo tempo.
+# Releases nunca rodam duas ao mesmo tempo; em PR, um push novo cancela o build anterior.
 concurrency:
-  group: release
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'push' && 'release' || format('pr-{0}', github.ref) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # 1. Lê os commits (Conventional Commits), decide a versão e cria a tag + release.
   version:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.semrel.outputs.version }}
@@ -35,9 +38,11 @@ jobs:
   # 2. Compila o .deb e anexa direto na release (sem upload de artifact do Actions).
   build-deb:
     needs: version
-    if: needs.version.outputs.version != ''
-    # 22.04 = glibc mais antiga, o .deb roda em mais distros.
-    runs-on: ubuntu-22.04
+    # Em PR o job version é pulado; !cancelled() deixa este rodar mesmo assim.
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || needs.version.outputs.version != '') }}
+    # O .deb fica ligado à glibc e ao WebKit desta versão: roda no 24.04 e mais novos.
+    # Não subir sem necessidade, senão deixa de instalar em quem está no 24.04.
+    runs-on: ubuntu-24.04
     # Uma etapa travada não pode segurar a fila de releases por horas.
     timeout-minutes: 30
     env:
@@ -45,14 +50,15 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v7
-      # Cacheia os .deb baixados: o espelho do apt às vezes trava por vários minutos.
+      # apt direto: a cache-apt-pkgs-action não recria os links .so dos pacotes -dev e o link falha.
       - name: Dependências de sistema do Tauri
-        uses: awalsh128/cache-apt-pkgs-action@v1.6.3
         timeout-minutes: 10
-        with:
-          packages: libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
-          # Mudar aqui invalida o cache (ex.: pra forçar baixar de novo).
-          version: 1
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get update -o Acquire::Retries=3
+          sudo apt-get install -y -o Acquire::Retries=3 libwebkit2gtk-4.1-dev build-essential \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
         with:
@@ -63,14 +69,17 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Aplica a versão da release
+        if: env.VERSION != ''
         run: npm version "$VERSION" --no-git-tag-version --allow-same-version
       - run: npx tauri build --bundles deb
       - name: Anexa o .deb na release
+        if: env.VERSION != ''
         run: gh release upload "v$VERSION" src-tauri/target/release/bundle/deb/*.deb --clobber
 
   # 3. Mantém só a release atual + 2 anteriores. As mais velhas (e suas tags) são apagadas.
   cleanup:
     needs: build-deb
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
