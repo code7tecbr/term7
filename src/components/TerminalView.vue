@@ -4,6 +4,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { spawnPty, type PtySession } from "../lib/pty";
+import { attachLinks } from "../lib/links";
 import { matchShortcut } from "../lib/shortcuts";
 import { isTextKey, routeTextInput } from "../lib/textInput";
 import { term7Dark } from "../lib/theme";
@@ -102,6 +103,7 @@ onMounted(async () => {
   t.loadAddon(fit);
   t.open(container.value!);
   loadWebgl(t);
+  attachLinks(t);
   fit.fit();
 
   // Atalhos do app não chegam no shell. Texto (incluindo acentos) não vai pelo

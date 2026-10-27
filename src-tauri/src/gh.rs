@@ -78,8 +78,8 @@ pub async fn gh_runs(root: String) -> Result<GhResult, String> {
 #[tauri::command]
 pub fn open_url(url: String) -> Result<(), String> {
     // Só links web: o xdg-open também abriria arquivos e executáveis locais.
-    if !url.starts_with("https://") {
-        return Err("só links https podem ser abertos".into());
+    if !url.starts_with("https://") && !url.starts_with("http://") {
+        return Err("só links http(s) podem ser abertos".into());
     }
     let mut child = Command::new("xdg-open")
         .arg(&url)
