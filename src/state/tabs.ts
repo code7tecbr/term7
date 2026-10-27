@@ -267,19 +267,26 @@ export function setTabColor(tabId: number, color: string | null) {
  * Ctrl+' (igual ao VS Code): abre o terminal inferior e foca nele;
  * se já está focado, esconde (o shell continua vivo) e volta pro principal.
  */
-export function togglePanel() {
+/** Mostra e foca o terminal inferior da aba ativa, criando se preciso. */
+export function openPanel() {
   const tab = activeTab.value;
   if (!tab) return;
   if (!tab.panelAlive) {
     tab.panelCwd = tab.cwd ?? tab.initialCwd;
     tab.panelAlive = true;
   }
-  if (tab.panelOpen && tab.focusedPane === "panel") {
+  tab.panelOpen = true;
+  tab.focusedPane = "panel";
+  return tab;
+}
+
+export function togglePanel() {
+  const tab = activeTab.value;
+  if (tab?.panelOpen && tab.focusedPane === "panel") {
     tab.panelOpen = false;
     tab.focusedPane = "main";
   } else {
-    tab.panelOpen = true;
-    tab.focusedPane = "panel";
+    openPanel();
   }
 }
 

@@ -24,6 +24,11 @@ trap 'rm -rf "$TMP"' EXIT
 dpkg-deb -x "$DEB" "$TMP"
 
 install -Dm755 "$TMP/usr/bin/term7" "$BIN"
+
+# Sem passar pelo apt, as dependências do .deb não são instaladas: só avisa.
+for cmd in git gh; do
+  command -v "$cmd" >/dev/null || echo "Aviso: '$cmd' não encontrado. Instale com: sudo apt install $cmd" >&2
+done
 for dir in "$TMP"/usr/share/icons/hicolor/*/apps; do
   size=$(basename "$(dirname "$dir")")
   install -Dm644 "$dir/term7.png" "$ICONS/$size/apps/term7.png"
