@@ -4,7 +4,9 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { spawnPty, type PtySession } from "../lib/pty";
+import { attachLinks } from "../lib/links";
 import { matchShortcut } from "../lib/shortcuts";
+import { isTextKey, routeTextInput } from "../lib/textInput";
 import { term7Dark } from "../lib/theme";
 
 const props = defineProps<{ cwd: string | null; focused: boolean }>();
@@ -37,6 +39,18 @@ async function loadFont(family: string) {
   } catch {
     // sem a fonte, segue com a reserva
   }
+}
+
+/**
+ * Shift+Enter manda ESC + CR, que o Claude CLI entende como nova linha (sem
+ * precisar do /terminal-setup). No zsh vira quebra de linha no comando.
+ * Retorna true se tratou a tecla.
+ */
+function handleShiftEnter(e: KeyboardEvent) {
+  if (e.key !== "Enter" || !e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return false;
+  // Bloqueia também o keypress, senão o xterm manda o \r depois.
+  if (e.type === "keydown") session?.write("\x1b\r");
+  return true;
 }
 
 /** Ctrl+Shift+C / Ctrl+Shift+V. Retorna true se tratou a tecla. */
@@ -89,10 +103,15 @@ onMounted(async () => {
   t.loadAddon(fit);
   t.open(container.value!);
   loadWebgl(t);
+  attachLinks(t);
   fit.fit();
 
-  // Atalhos do app não chegam no shell.
-  t.attachCustomKeyEventHandler((e) => !handleClipboard(e, t) && matchShortcut(e) === null);
+  // Atalhos do app não chegam no shell. Texto (incluindo acentos) não vai pelo
+  // keydown: chega pelo routeTextInput, a partir do que o sistema digitou.
+  t.attachCustomKeyEventHandler(
+    (e) => !handleClipboard(e, t) && !handleShiftEnter(e) && matchShortcut(e) === null && !isTextKey(e),
+  );
+  routeTextInput(t, container.value!, (text) => session?.write(text));
 
   session = await spawnPty({
     cols: t.cols,

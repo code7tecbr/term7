@@ -17,6 +17,8 @@ export function snapshot(): string {
       name: t.name,
       color: t.color,
       tag: t.tag,
+      files: t.files.map((f) => ({ ...f })),
+      view: t.view,
       panelOpen: t.panelOpen,
       panelHeight: t.panelHeight,
     })),

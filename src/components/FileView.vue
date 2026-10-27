@@ -8,15 +8,16 @@ import { languages } from "@codemirror/language-data";
 import { unifiedMergeView } from "@codemirror/merge";
 import { oneDarkHighlightStyle } from "@codemirror/theme-one-dark";
 import { gitShowHead, readTextFile, type GitStatus } from "../lib/git";
-import { closeAllFiles, closeFile, viewer, type OpenFile } from "../state/viewer";
+import type { OpenFile } from "../state/tabs";
 
-const props = defineProps<{ status: GitStatus | null }>();
+/** Um arquivo aberto na área principal: atual ou com as alterações marcadas. */
+const props = defineProps<{ file: OpenFile; status: GitStatus | null }>();
 
 const host = ref<HTMLDivElement>();
 const note = ref<string | null>(null);
 let view: EditorView | undefined;
 
-const active = computed<OpenFile | undefined>(() => viewer.files[viewer.active]);
+const active = computed(() => props.file);
 
 const theme = EditorView.theme(
   {
@@ -52,7 +53,7 @@ async function languageFor(path: string): Promise<Extension> {
 // Chave do arquivo no status do git: muda quando o arquivo muda e aí recarrega.
 const changeKey = computed(() => {
   const file = active.value;
-  const change = file && props.status?.files.find((f) => f.path === file.path);
+  const change = props.status?.root === file.root && props.status.files.find((f) => f.path === file.path);
   return change ? `${change.additions}|${change.deletions}|${change.kind}` : "clean";
 });
 
@@ -60,7 +61,7 @@ let loadId = 0;
 
 async function load() {
   const file = active.value;
-  if (!view || !file) return;
+  if (!view) return;
   const id = ++loadId;
 
   const [current, original, language] = await Promise.all([
@@ -86,7 +87,7 @@ async function load() {
     theme,
     language,
   ];
-  if (viewer.mode === "changes") {
+  if (file.mode === "changes") {
     extensions.push(
       unifiedMergeView({
         original: original?.text ?? "",
@@ -105,7 +106,7 @@ async function load() {
   if (sameFile) requestAnimationFrame(() => view && (view.scrollDOM.scrollTop = top));
 }
 
-watch([() => active.value?.path, () => active.value?.root, () => viewer.mode, changeKey], load);
+watch([() => props.file.path, () => props.file.root, () => props.file.mode, changeKey], load);
 
 onMounted(() => {
   view = new EditorView({ parent: host.value! });
@@ -114,37 +115,11 @@ onMounted(() => {
 
 onBeforeUnmount(() => view?.destroy());
 
-const fileName = (path: string) => path.split("/").pop() ?? path;
 </script>
 
 <template>
   <section class="viewer">
-    <header @mousedown.prevent>
-      <div class="files">
-        <div
-          v-for="(file, i) in viewer.files"
-          :key="file.root + file.path"
-          class="file"
-          :class="{ active: i === viewer.active }"
-          :title="file.path"
-          @click="viewer.active = i"
-          @mousedown.middle.prevent="closeFile(i)"
-        >
-          <span>{{ fileName(file.path) }}</span>
-          <button class="x" title="Fechar" @click.stop="closeFile(i)">
-            <svg viewBox="0 0 16 16" width="11" height="11"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
-          </button>
-        </div>
-      </div>
-      <div class="modes">
-        <button :class="{ on: viewer.mode === 'changes' }" title="Arquivo com as alterações marcadas" @click="viewer.mode = 'changes'">Alterações</button>
-        <button :class="{ on: viewer.mode === 'file' }" title="Arquivo atual, sem marcações" @click="viewer.mode = 'file'">Arquivo</button>
-      </div>
-      <button class="icon" title="Fechar visualizador" @click="closeAllFiles">
-        <svg viewBox="0 0 16 16" width="13" height="13"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
-      </button>
-    </header>
-    <div v-if="active" class="path">{{ active.path }}</div>
+    <div class="path">{{ file.path }}</div>
     <div v-if="note" class="note">{{ note }}</div>
     <div ref="host" class="editor" />
   </section>
@@ -157,88 +132,6 @@ const fileName = (path: string) => path.split("/").pop() ?? path;
   height: 100%;
   min-width: 0;
   background: var(--bg);
-}
-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 36px;
-  padding: 0 6px;
-  flex-shrink: 0;
-  background: var(--bg-elevated);
-  border-bottom: 1px solid var(--border);
-  user-select: none;
-}
-.files {
-  display: flex;
-  gap: 2px;
-  flex: 1;
-  min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.file {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-  height: 26px;
-  padding: 0 4px 0 10px;
-  border-radius: 5px;
-  color: var(--fg-muted);
-  font-size: 12px;
-  cursor: pointer;
-}
-.file:hover {
-  background: var(--hover);
-}
-.file.active {
-  background: var(--bg);
-  color: var(--fg);
-}
-.x,
-.icon {
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: 4px;
-  background: none;
-  color: var(--fg-muted);
-  cursor: pointer;
-}
-.x {
-  width: 18px;
-  height: 18px;
-}
-.icon {
-  width: 26px;
-  height: 26px;
-}
-.x:hover,
-.icon:hover {
-  background: var(--hover);
-  color: var(--fg);
-}
-.modes {
-  display: flex;
-  flex-shrink: 0;
-  padding: 2px;
-  border-radius: 6px;
-  background: var(--bg);
-}
-.modes button {
-  padding: 3px 9px;
-  border: 0;
-  border-radius: 4px;
-  background: none;
-  color: var(--fg-muted);
-  font: inherit;
-  font-size: 11.5px;
-  cursor: pointer;
-}
-.modes button.on {
-  background: var(--active);
-  color: var(--fg);
 }
 .path {
   padding: 4px 12px;

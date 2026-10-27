@@ -72,8 +72,14 @@ mensagens de commit ([Conventional Commits](https://www.conventionalcommits.org/
 | `feat!: ...` / `BREAKING CHANGE` | major |
 | `chore:`, `docs:`, `refactor:` | sem release |
 
-A cada push na `main`, o workflow `.github/workflows/release.yml` cria a release, compila o
-`.deb`, anexa na release e apaga as releases mais antigas, deixando só a atual + 2 anteriores.
+As features entram na branch `dev`; a release sai quando a `dev` é mergeada na `main`. A cada
+push na `main`, o workflow `.github/workflows/release.yml` cria a release, compila o `.deb`, anexa
+na release e apaga as releases mais antigas, deixando só a atual + 2 anteriores. Em PR, o mesmo
+workflow só compila o `.deb`, pra mostrar se o build quebra.
+
+A versão vem só da release: o workflow grava ela no `package.json` antes de compilar, e o app
+mostra no canto direito da barra de status (clicar abre a release). No repositório o `package.json`
+fica em `0.0.0-dev`, então um build local aparece como `dev`.
 
 ## Roadmap
 
@@ -81,7 +87,8 @@ A cada push na `main`, o workflow `.github/workflows/release.yml` cria a release
 - [x] Grupos de abas (nome, cor, recolher) e arrastar/soltar
 - [x] Sessão restaurada ao reabrir (abas, grupos, pastas)
 - [x] Terminal inferior por aba (`Ctrl+'`)
-- [x] Painel de diff do git (`Ctrl+Shift+G`) e visualizador de arquivo
+- [x] Explorador de arquivos com o status do git (`Ctrl+Shift+G`)
+- [x] Arquivos em abas na área principal, com toggle entre arquivo e alterações
 - [x] Troca de branch pela barra de status
 - [x] PR da branch e estado das actions na barra de status (indica worktree)
 

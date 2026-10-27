@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
+import { getVersion } from "@tauri-apps/api/app";
 import { repoName, type GitStatus } from "../lib/git";
 import { openUrl, overall, type Check, type CheckState, type GithubStatus, type RepoInfo } from "../lib/github";
 import { prettyPath } from "../state/tabs";
@@ -17,6 +18,18 @@ const props = defineProps<{
 defineEmits<{ toggleDiff: []; togglePanel: []; pickBranch: []; githubLogin: [] }>();
 
 const open = (url: string) => openUrl(url).catch(() => {});
+
+// Versão embutida no binário: a release grava a dela; build local fica "0.0.0-dev".
+const RELEASES = "https://github.com/code7tecbr/term7/releases";
+const version = ref<string | null>(null);
+getVersion()
+  .then((v) => (version.value = v))
+  .catch(() => {});
+const isDev = computed(() => !!version.value?.includes("dev"));
+
+function openRelease() {
+  if (version.value) open(isDev.value ? RELEASES : `${RELEASES}/tag/v${version.value}`);
+}
 
 // Branch no link: cada parte codificada, mas as barras ficam (ex.: feat/x).
 const branchPath = (b: string) => b.split("/").map(encodeURIComponent).join("/");
@@ -136,7 +149,7 @@ const totals = computed(() => {
           <svg viewBox="0 0 16 16" width="13" height="13"><path d="M9 3h4v4M13 3 7.5 8.5M12 9.5V12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h2.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
         </button>
 
-        <button class="btn" :class="{ open: diffOpen }" title="Mostrar alterações (Ctrl+Shift+G)" @click="$emit('toggleDiff')">
+        <button class="btn" :class="{ open: diffOpen }" title="Explorador de arquivos (Ctrl+Shift+G)" @click="$emit('toggleDiff')">
           <template v-if="totals.count">
             <span>{{ totals.count }} {{ totals.count === 1 ? "arquivo" : "arquivos" }}</span>
             <span class="add">+{{ totals.additions }}</span>
@@ -145,6 +158,15 @@ const totals = computed(() => {
           <span v-else class="clean">sem alterações</span>
         </button>
       </template>
+
+      <button
+        v-if="version"
+        class="btn version"
+        :title="isDev ? 'term7 — build local (fora de uma release)' : `term7 v${version} — ver a release`"
+        @click="openRelease"
+      >
+        {{ isDev ? "dev" : `v${version}` }}
+      </button>
     </div>
   </footer>
 </template>
@@ -211,6 +233,11 @@ const totals = computed(() => {
 }
 .del {
   color: var(--red);
+}
+.version {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  opacity: 0.7;
 }
 .clean,
 .sync {
