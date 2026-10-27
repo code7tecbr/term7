@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
+import { getVersion } from "@tauri-apps/api/app";
 import { repoName, type GitStatus } from "../lib/git";
 import { openUrl, overall, type Check, type CheckState, type GithubStatus, type RepoInfo } from "../lib/github";
 import { prettyPath } from "../state/tabs";
@@ -17,6 +18,18 @@ const props = defineProps<{
 defineEmits<{ toggleDiff: []; togglePanel: []; pickBranch: []; githubLogin: [] }>();
 
 const open = (url: string) => openUrl(url).catch(() => {});
+
+// Versão embutida no binário: a release grava a dela; build local fica "0.0.0-dev".
+const RELEASES = "https://github.com/code7tecbr/term7/releases";
+const version = ref<string | null>(null);
+getVersion()
+  .then((v) => (version.value = v))
+  .catch(() => {});
+const isDev = computed(() => !!version.value?.includes("dev"));
+
+function openRelease() {
+  if (version.value) open(isDev.value ? RELEASES : `${RELEASES}/tag/v${version.value}`);
+}
 
 // Branch no link: cada parte codificada, mas as barras ficam (ex.: feat/x).
 const branchPath = (b: string) => b.split("/").map(encodeURIComponent).join("/");
@@ -145,6 +158,15 @@ const totals = computed(() => {
           <span v-else class="clean">sem alterações</span>
         </button>
       </template>
+
+      <button
+        v-if="version"
+        class="btn version"
+        :title="isDev ? 'term7 — build local (fora de uma release)' : `term7 v${version} — ver a release`"
+        @click="openRelease"
+      >
+        {{ isDev ? "dev" : `v${version}` }}
+      </button>
     </div>
   </footer>
 </template>
@@ -211,6 +233,11 @@ const totals = computed(() => {
 }
 .del {
   color: var(--red);
+}
+.version {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  opacity: 0.7;
 }
 .clean,
 .sync {

@@ -74,6 +74,10 @@ mensagens de commit ([Conventional Commits](https://www.conventionalcommits.org/
 A cada push na `main`, o workflow `.github/workflows/release.yml` cria a release, compila o
 `.deb`, anexa na release e apaga as releases mais antigas, deixando só a atual + 2 anteriores.
 
+A versão vem só da release: o workflow grava ela no `package.json` antes de compilar, e o app
+mostra no canto direito da barra de status (clicar abre a release). No repositório o `package.json`
+fica em `0.0.0-dev`, então um build local aparece como `dev`.
+
 ## Roadmap
 
 - [x] Abas na lateral, com nome, cor e tag de etapa (discovery, spec, plan, code, review, test, close/merge), também nos grupos
