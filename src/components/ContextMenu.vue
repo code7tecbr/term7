@@ -4,7 +4,8 @@ import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 export type MenuItem =
   | { label: string; action: () => void; danger?: boolean; dot?: string }
   | { separator: true }
-  | { colors: string[]; selected: string | null; pick: (color: string | null) => void; allowNone?: boolean };
+  | { colors: string[]; selected: string | null; pick: (color: string | null) => void; allowNone?: boolean }
+  | { tags: readonly { id: string; label: string; color: string }[]; selected: string | null; pick: (id: string | null) => void };
 
 const props = defineProps<{ x: number; y: number; items: MenuItem[] }>();
 const emit = defineEmits<{ close: [] }>();
@@ -64,6 +65,19 @@ onBeforeUnmount(() => {
           :style="{ background: color }"
           @click="item.pick(color)"
         />
+      </div>
+      <div v-else-if="'tags' in item" class="tags">
+        <button
+          v-for="tag in item.tags"
+          :key="tag.id"
+          class="chip"
+          :class="{ selected: tag.id === item.selected }"
+          :style="{ '--tag': tag.color }"
+          :title="tag.id === item.selected ? 'Clique de novo para tirar a tag' : `Marcar como ${tag.label}`"
+          @click="run(() => item.pick(tag.id === item.selected ? null : tag.id))"
+        >
+          {{ tag.label }}
+        </button>
       </div>
       <button v-else class="item" :class="{ danger: item.danger }" @click="run(item.action)">
         <span v-if="item.dot" class="dot" :style="{ background: item.dot }" />
@@ -130,6 +144,31 @@ hr {
 .swatch.none {
   background: linear-gradient(135deg, transparent 45%, var(--fg-muted) 45% 55%, transparent 55%);
   border-color: var(--border);
+}
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 220px;
+  padding: 4px 10px 6px;
+}
+.chip {
+  padding: 1px 7px;
+  border: 1px solid color-mix(in srgb, var(--tag) 45%, transparent);
+  border-radius: 9px;
+  background: none;
+  color: var(--tag);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.chip:hover {
+  background: color-mix(in srgb, var(--tag) 14%, transparent);
+}
+.chip.selected {
+  background: var(--tag);
+  border-color: var(--tag);
+  color: var(--bg);
 }
 .swatch.selected {
   border-color: var(--fg);

@@ -1,4 +1,5 @@
 mod files;
+mod gh;
 mod git;
 mod pty;
 mod session;
@@ -18,6 +19,10 @@ pub fn run() {
             git::git_branches,
             git::git_checkout,
             git::git_fetch,
+            git::git_repo_info,
+            gh::gh_pr,
+            gh::gh_runs,
+            gh::open_url,
             files::read_text_file,
             session::session_load,
             session::session_save,

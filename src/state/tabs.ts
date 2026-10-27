@@ -2,10 +2,27 @@ import { computed, reactive } from "vue";
 
 export const COLORS = ["#7aa2f7", "#9ece6a", "#e0af68", "#f7768e", "#bb9af7", "#7dcfff", "#ff9e64"];
 
+/** Etapas do fluxo de trabalho, na ordem em que acontecem. */
+export const TAGS = [
+  { id: "discovery", label: "discovery", color: "#ff9e64" },
+  { id: "spec", label: "spec", color: "#7dcfff" },
+  { id: "plan", label: "plan", color: "#73daca" },
+  { id: "code", label: "code", color: "#7aa2f7" },
+  { id: "review", label: "review", color: "#e0af68" },
+  { id: "test", label: "test", color: "#9ece6a" },
+  { id: "merge", label: "close/merge", color: "#bb9af7" },
+] as const;
+
+export type TagId = (typeof TAGS)[number]["id"];
+export type Tag = (typeof TAGS)[number];
+
+export const findTag = (id: string | null) => TAGS.find((t) => t.id === id) ?? null;
+
 export interface Group {
   id: number;
   name: string;
   color: string;
+  tag: TagId | null;
   collapsed: boolean;
 }
 
@@ -33,6 +50,7 @@ export interface Tab {
   /** Nome dado pelo usuário. null = título automático (pasta/processo). */
   name: string | null;
   color: string | null;
+  tag: TagId | null;
   /** Arquivos abertos em abas ao lado do terminal. */
   files: OpenFile[];
   /** O que a área principal mostra: -1 = terminal, senão o índice em files. */
@@ -47,7 +65,7 @@ export interface Tab {
 }
 
 export type SavedTab = Pick<Tab, "cwd" | "groupId"> &
-  Partial<Pick<Tab, "name" | "color" | "panelOpen" | "panelHeight" | "files" | "view">>;
+  Partial<Pick<Tab, "name" | "color" | "tag" | "panelOpen" | "panelHeight" | "files" | "view">>;
 
 function makeTab(fields: Partial<Tab>): Tab {
   return {
@@ -58,6 +76,7 @@ function makeTab(fields: Partial<Tab>): Tab {
     groupId: null,
     name: null,
     color: null,
+    tag: null,
     files: [],
     view: -1,
     panelAlive: false,
@@ -168,7 +187,7 @@ export function restoreLayout(
   for (const g of groups) {
     const id = nextGroupId++;
     groupIds.set(g.id, id);
-    store.groups.push({ ...g, id });
+    store.groups.push({ ...g, id, tag: findTag(g.tag ?? null)?.id ?? null });
   }
   for (const t of tabs) {
     store.tabs.push(
@@ -178,6 +197,8 @@ export function restoreLayout(
         groupId: t.groupId === null ? null : (groupIds.get(t.groupId) ?? null),
         name: t.name ?? null,
         color: t.color ?? null,
+        // Ignora tag desconhecida (sessão de outra versão).
+        tag: findTag(t.tag ?? null)?.id ?? null,
         files: (t.files ?? []).map((f) => ({ ...f, mode: f.mode === "changes" ? "changes" : "file" })),
         view: t.view !== undefined && t.view < (t.files?.length ?? 0) ? t.view : -1,
         panelAlive: !!t.panelOpen,
@@ -276,6 +297,11 @@ export function renameTab(tabId: number, name: string | null) {
   if (tab) tab.name = name?.trim() || null;
 }
 
+export function setTabTag(tabId: number, tag: TagId | null) {
+  const tab = findTab(tabId);
+  if (tab) tab.tag = tag;
+}
+
 export function setTabColor(tabId: number, color: string | null) {
   const tab = findTab(tabId);
   if (tab) tab.color = color;
@@ -287,19 +313,26 @@ export function setTabColor(tabId: number, color: string | null) {
  * Ctrl+' (igual ao VS Code): abre o terminal inferior e foca nele;
  * se já está focado, esconde (o shell continua vivo) e volta pro principal.
  */
-export function togglePanel() {
+/** Mostra e foca o terminal inferior da aba ativa, criando se preciso. */
+export function openPanel() {
   const tab = activeTab.value;
   if (!tab) return;
   if (!tab.panelAlive) {
     tab.panelCwd = tab.cwd ?? tab.initialCwd;
     tab.panelAlive = true;
   }
-  if (tab.panelOpen && tab.focusedPane === "panel") {
+  tab.panelOpen = true;
+  tab.focusedPane = "panel";
+  return tab;
+}
+
+export function togglePanel() {
+  const tab = activeTab.value;
+  if (tab?.panelOpen && tab.focusedPane === "panel") {
     tab.panelOpen = false;
     tab.focusedPane = "main";
   } else {
-    tab.panelOpen = true;
-    tab.focusedPane = "panel";
+    openPanel();
   }
 }
 
@@ -320,6 +353,7 @@ export function createGroup(tabId: number) {
     id,
     name: `Grupo ${id}`,
     color: COLORS[(id - 1) % COLORS.length],
+    tag: null,
     collapsed: false,
   };
   store.groups.push(group);
@@ -381,6 +415,11 @@ export function toggleCollapsed(groupId: number) {
 export function renameGroup(groupId: number, name: string) {
   const group = findGroup(groupId);
   if (group) group.name = name.trim() || group.name;
+}
+
+export function setGroupTag(groupId: number, tag: TagId | null) {
+  const group = store.groups.find((g) => g.id === groupId);
+  if (group) group.tag = tag;
 }
 
 export function setGroupColor(groupId: number, color: string) {

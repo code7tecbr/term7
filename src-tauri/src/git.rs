@@ -354,3 +354,93 @@ pub async fn git_fetch(root: String) -> Result<(), String> {
         .await
         .map_err(|e| e.to_string())?
 }
+
+// ---- info do repositório (worktree e link web) ----
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoInfo {
+    /// A pasta é uma worktree adicional (`git worktree add`), não o clone principal.
+    is_worktree: bool,
+    /// Pasta do clone principal, quando é worktree.
+    main_root: Option<String>,
+    /// Página do repositório no navegador (ex.: https://github.com/dono/repo).
+    web_url: Option<String>,
+    /// Branch padrão do remote (origin/HEAD), se conhecida.
+    default_branch: Option<String>,
+}
+
+/// Converte o endereço do remote em link web. Aceita SSH (`git@host:dono/repo.git`,
+/// `ssh://git@host/dono/repo`) e HTTPS.
+fn web_url(remote: &str) -> Option<String> {
+    let remote = remote.trim();
+    let rest = if let Some(r) = remote.strip_prefix("https://") {
+        r.to_string()
+    } else if let Some(r) = remote.strip_prefix("ssh://") {
+        r.to_string()
+    } else if let Some((user_host, path)) = remote.split_once(':') {
+        // git@host:dono/repo — sem "://", então o ":" separa host e caminho.
+        if user_host.contains('/') || path.starts_with("//") {
+            return None;
+        }
+        format!("{user_host}/{path}")
+    } else {
+        return None;
+    };
+    // Tira usuário/token ("git@", "x-access-token:abc@") e porta.
+    let rest = rest.rsplit_once('@').map_or(rest.as_str(), |(_, r)| r);
+    let (host, path) = rest.split_once('/')?;
+    let host = host.split(':').next()?;
+    let path = path.trim_end_matches('/').trim_end_matches(".git");
+    (!host.is_empty() && path.contains('/')).then(|| format!("https://{host}/{path}"))
+}
+
+fn repo_info(root: &str) -> RepoInfo {
+    let dirs = git_ok(
+        root,
+        &["rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"],
+    );
+    let (git_dir, common_dir) = dirs
+        .as_deref()
+        .and_then(|s| s.split_once('\n'))
+        .map(|(a, b)| (a.trim().to_string(), b.trim().to_string()))
+        .unwrap_or_default();
+    let is_worktree = !git_dir.is_empty() && git_dir != common_dir;
+    let main_root = is_worktree
+        .then(|| Path::new(&common_dir).parent().map(|p| p.to_string_lossy().into_owned()))
+        .flatten();
+
+    let default_branch = git_ok(root, &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])
+        .map(|s| s.trim().trim_start_matches("origin/").to_string())
+        .filter(|s| !s.is_empty());
+
+    RepoInfo {
+        is_worktree,
+        main_root,
+        web_url: git_ok(root, &["remote", "get-url", "origin"]).and_then(|r| web_url(&r)),
+        default_branch,
+    }
+}
+
+#[tauri::command]
+pub async fn git_repo_info(root: String) -> Result<RepoInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || repo_info(&root))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::web_url;
+
+    #[test]
+    fn converte_remotes() {
+        let gh = Some("https://github.com/code7tecbr/term7".to_string());
+        assert_eq!(web_url("git@github.com:code7tecbr/term7.git"), gh);
+        assert_eq!(web_url("https://github.com/code7tecbr/term7.git"), gh);
+        assert_eq!(web_url("https://x-access-token:abc@github.com/code7tecbr/term7"), gh);
+        assert_eq!(web_url("ssh://git@github.com:22/code7tecbr/term7.git\n"), gh);
+        assert_eq!(web_url("/caminho/local/repo"), None);
+        assert_eq!(web_url("file:///caminho/repo"), None);
+    }
+}

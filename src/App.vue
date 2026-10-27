@@ -15,6 +15,7 @@ const FileView = defineAsyncComponent(() => import("./components/FileView.vue"))
 import type { PtySession } from "./lib/pty";
 import { matchShortcut, type Action } from "./lib/shortcuts";
 import { useGitStatus } from "./lib/useGitStatus";
+import { useGithub } from "./lib/useGithub";
 import { restoreSession, saveSession, snapshot } from "./state/session";
 import {
   activeTab,
@@ -23,6 +24,7 @@ import {
   cycleTab,
   goToTab,
   newTab,
+  openPanel,
   store,
   tabTitle,
   togglePanel,
@@ -93,6 +95,42 @@ const pollTimer = setInterval(pollSessions, 1000);
 const { status: git, refresh: refreshGit } = useGitStatus(computed(() => activeTab.value?.cwd ?? null));
 const diffOpen = ref(false);
 const pickerOpen = ref(false);
+
+const { repo, github, refresh: refreshGithub } = useGithub(
+  computed(() => git.value?.root ?? null),
+  computed(() => git.value?.branch ?? null),
+  computed(() => git.value?.ahead ?? 0),
+);
+
+// ---- terminal inferior: escrever um comando nele (ex.: gh auth login) ----
+const panelSessions = new Map<number, PtySession>();
+const panelInput = new Map<number, string>();
+
+function onPanelSpawned(tabId: number, session: PtySession) {
+  panelSessions.set(tabId, session);
+  const text = panelInput.get(tabId);
+  if (text) {
+    panelInput.delete(tabId);
+    session.write(text);
+  }
+}
+
+/** Abre o terminal inferior com o comando digitado (sem Enter: quem confirma é o usuário). */
+function typeInPanel(text: string) {
+  // Painel recém-criado: o shell ainda não subiu, então guarda até o spawn.
+  const wasAlive = !!activeTab.value?.panelAlive;
+  const tab = openPanel();
+  if (!tab) return;
+  const session = wasAlive ? panelSessions.get(tab.id) : undefined;
+  if (session) session.write(text).catch(() => {});
+  else panelInput.set(tab.id, text);
+}
+
+function githubLogin() {
+  typeInPanel("gh auth login");
+  // Depois do login o PR aparece sozinho na próxima consulta; ao voltar pra janela, consulta já.
+  window.addEventListener("focus", refreshGithub, { once: true });
+}
 
 // ---- larguras/alturas ajustáveis ----
 function readNumber(key: string, fallback: number) {
@@ -242,7 +280,8 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
                   :cwd="tab.panelCwd"
                   :focused="isActive(tab) && tab.panelOpen && tab.focusedPane === 'panel'"
                   @focus="tab.focusedPane = 'panel'"
-                  @exit="closePanel(tab.id)"
+                  @spawned="onPanelSpawned(tab.id, $event)"
+                  @exit="panelSessions.delete(tab.id), closePanel(tab.id)"
                 />
               </div>
             </div>
@@ -266,12 +305,15 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
       :cwd="activeTab?.cwd ?? null"
       :home="home"
       :git="git"
+      :repo="repo"
+      :github="github"
       :diff-open="diffOpen && !!git"
       :panel-open="!!activeTab?.panelOpen"
       :picker-open="pickerOpen"
       @toggle-diff="diffOpen = !diffOpen"
       @toggle-panel="togglePanel"
       @pick-branch="pickerOpen = !pickerOpen"
+      @github-login="githubLogin"
     />
 
     <BranchPicker
