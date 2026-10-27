@@ -8,10 +8,22 @@ export interface SpawnOptions {
   onExit: (code: number) => void;
 }
 
+/** Estado do Claude CLI na aba, avisado pelos hooks (ver claude.rs). */
+export type ClaudeState = "working" | "waiting" | "done";
+
 export interface PtyInfo {
   cwd: string | null;
   process: string | null;
+  claude: ClaudeState | null;
 }
+
+export interface ClaudeHooksStatus {
+  installed: boolean;
+  settingsPath: string;
+}
+
+export const claudeHooksStatus = (id: number) => invoke<ClaudeHooksStatus>("claude_hooks_status", { id });
+export const claudeHooksInstall = (id: number) => invoke<ClaudeHooksStatus>("claude_hooks_install", { id });
 
 export interface PtySession {
   id: number;

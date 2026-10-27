@@ -5,12 +5,18 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { spawnPty, type PtySession } from "../lib/pty";
 import { attachLinks } from "../lib/links";
+import { attachPathLinks, type PathTarget } from "../lib/paths";
 import { matchShortcut } from "../lib/shortcuts";
 import { isTextKey, routeTextInput } from "../lib/textInput";
 import { term7Dark } from "../lib/theme";
 
 const props = defineProps<{ cwd: string | null; focused: boolean }>();
-const emit = defineEmits<{ spawned: [session: PtySession]; exit: [code: number]; focus: [] }>();
+const emit = defineEmits<{
+  spawned: [session: PtySession];
+  exit: [code: number];
+  focus: [];
+  openPath: [target: PathTarget];
+}>();
 
 const FONT_SIZE = 14;
 
@@ -53,20 +59,31 @@ function handleShiftEnter(e: KeyboardEvent) {
   return true;
 }
 
-/** Ctrl+Shift+C / Ctrl+Shift+V. Retorna true se tratou a tecla. */
+/**
+ * Ctrl+Shift+C / Ctrl+Shift+V, e Ctrl+C com texto selecionado (copia em vez de
+ * mandar a interrupção, como no VS Code). Sem seleção, Ctrl+C segue pro programa.
+ * Retorna true se tratou a tecla.
+ */
 function handleClipboard(e: KeyboardEvent, t: Terminal) {
-  if (e.type !== "keydown" || !e.ctrlKey || !e.shiftKey || e.altKey) return false;
+  if (!e.ctrlKey || e.altKey || e.metaKey) return false;
   const key = e.key.toLowerCase();
-  if (key === "c") {
-    const text = t.getSelection();
-    if (text) navigator.clipboard.writeText(text).catch(() => {});
+  const copy = key === "c" && (e.shiftKey || t.hasSelection());
+  if (copy) {
+    if (e.type === "keydown") {
+      const text = t.getSelection();
+      if (text) navigator.clipboard.writeText(text).catch(() => {});
+      // Ctrl+C sozinho limpa a seleção: o próximo Ctrl+C volta a interromper.
+      if (!e.shiftKey) t.clearSelection();
+    }
     return true;
   }
-  if (key === "v") {
-    navigator.clipboard
-      .readText()
-      .then((text) => text && t.paste(text))
-      .catch(() => {});
+  if (key === "v" && e.shiftKey) {
+    if (e.type === "keydown") {
+      navigator.clipboard
+        .readText()
+        .then((text) => text && t.paste(text))
+        .catch(() => {});
+    }
     return true;
   }
   return false;
@@ -104,6 +121,8 @@ onMounted(async () => {
   t.open(container.value!);
   loadWebgl(t);
   attachLinks(t);
+  // Caminho relativo é resolvido na pasta atual do shell da aba.
+  attachPathLinks(t, async () => (await session?.info())?.cwd ?? null, (target) => emit("openPath", target));
   fit.fit();
 
   // Atalhos do app não chegam no shell. Texto (incluindo acentos) não vai pelo

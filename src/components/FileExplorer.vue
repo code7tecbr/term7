@@ -174,8 +174,9 @@ function open(row: Row) {
     root: props.status.root,
     path: row.path,
     origPath: row.change?.origPath ?? null,
-    // Vindo da lista de alterados, o interesse é a mudança; da árvore toda, o arquivo.
-    mode: filter.value === "changed" && row.change && row.kind !== "deleted" ? "changes" : "file",
+    // Vindo da lista de alterados, o interesse é a mudança; da árvore toda, o arquivo
+    // (sem modo: o openFile escolhe, ex.: Markdown abre renderizado).
+    mode: filter.value === "changed" && row.change && row.kind !== "deleted" ? "changes" : undefined,
   });
 }
 

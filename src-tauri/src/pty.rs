@@ -29,6 +29,8 @@ pub struct PtyInfo {
     cwd: Option<String>,
     /// Processo em primeiro plano (ex.: "zsh", "vim", "npm").
     process: Option<String>,
+    /// Estado do Claude CLI na aba (working, waiting, done), via hooks.
+    claude: Option<String>,
 }
 
 /// Todas as sessões de shell abertas, indexadas por id (uma por aba/painel).
@@ -73,6 +75,9 @@ pub fn pty_spawn(
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
     cmd.env("TERM_PROGRAM", "term7");
+    // Identifica a aba pros hooks do Claude Code (ver claude.rs).
+    let id = state.next_id.fetch_add(1, Ordering::Relaxed);
+    cmd.env("TERM7_PANE", crate::claude::pane_key(id));
     // Pasta salva que não existe mais (ex.: repo apagado) cai pra home.
     let cwd = cwd.filter(|d| std::path::Path::new(d).is_dir());
     if let Some(dir) = cwd.or_else(|| std::env::var("HOME").ok()) {
@@ -88,7 +93,6 @@ pub fn pty_spawn(
     let killer = child.clone_killer();
     let pid = child.process_id();
 
-    let id = state.next_id.fetch_add(1, Ordering::Relaxed);
     state
         .sessions
         .lock()
@@ -139,6 +143,17 @@ pub fn pty_kill(state: State<'_, PtyState>, id: u32) -> Result<(), String> {
     Ok(())
 }
 
+/// Processo em primeiro plano na aba (o próprio shell, se não houver outro).
+pub fn foreground_pid(state: &State<'_, PtyState>, id: u32) -> Option<u32> {
+    let sessions = state.sessions.lock().unwrap();
+    let session = sessions.get(&id)?;
+    #[cfg(unix)]
+    let foreground = session.master.process_group_leader().map(|p| p as u32);
+    #[cfg(not(unix))]
+    let foreground: Option<u32> = None;
+    foreground.or(session.pid)
+}
+
 #[tauri::command]
 pub fn pty_info(state: State<'_, PtyState>, id: u32) -> Result<PtyInfo, String> {
     let sessions = state.sessions.lock().unwrap();
@@ -149,9 +164,15 @@ pub fn pty_info(state: State<'_, PtyState>, id: u32) -> Result<PtyInfo, String> 
     #[cfg(not(unix))]
     let foreground: Option<u32> = None;
 
+    // Só vale enquanto há outro programa na frente do shell (o Claude).
+    let claude = foreground
+        .filter(|fg| Some(*fg) != session.pid)
+        .and_then(|fg| crate::claude::read_state(id, fg));
+
     Ok(PtyInfo {
         cwd: session.pid.and_then(proc_cwd),
         process: foreground.or(session.pid).and_then(proc_name),
+        claude,
     })
 }
 

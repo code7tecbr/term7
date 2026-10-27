@@ -91,6 +91,9 @@ fica em `0.0.0-dev`, então um build local aparece como `dev`.
 - [x] Arquivos em abas na área principal, com toggle entre arquivo e alterações
 - [x] Troca de branch pela barra de status
 - [x] PR da branch e estado das actions na barra de status (indica worktree)
+- [x] Avisos do Claude CLI na aba (trabalhando, esperando você, terminou) via hooks
+- [x] Shift+Enter, Ctrl+C copiando seleção e links clicáveis no terminal
+- [x] Caminhos de arquivo clicáveis na saída (abrem numa aba, na linha certa); Markdown e HTML renderizados
 
 O que falta está nas [issues](https://github.com/code7tecbr/term7/issues):
 

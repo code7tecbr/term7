@@ -14,8 +14,12 @@ const props = defineProps<{
   diffOpen: boolean;
   panelOpen: boolean;
   pickerOpen: boolean;
+  claudeHooksMissing: boolean;
+  claudeHooksPath: string | null;
+  /** Mensagem temporária (ex.: resultado de ativar os avisos). */
+  note: string | null;
 }>();
-defineEmits<{ toggleDiff: []; togglePanel: []; pickBranch: []; githubLogin: [] }>();
+defineEmits<{ toggleDiff: []; togglePanel: []; pickBranch: []; githubLogin: []; installClaudeHooks: [] }>();
 
 const open = (url: string) => openUrl(url).catch(() => {});
 
@@ -105,6 +109,16 @@ const totals = computed(() => {
     </span>
 
     <div class="right" @mousedown.prevent>
+      <span v-if="note" class="note">{{ note }}</span>
+      <button
+        v-else-if="claudeHooksMissing"
+        class="btn claude"
+        :title="`Instala hooks no ${claudeHooksPath ?? 'settings.json do Claude'} pra aba avisar quando o Claude pedir algo ou terminar. Os outros hooks e configurações ficam como estão.`"
+        @click="$emit('installClaudeHooks')"
+      >
+        Ativar avisos do Claude
+      </button>
+
       <button class="btn" :class="{ open: panelOpen }" title="Terminal inferior (Ctrl+')" @click="$emit('togglePanel')">
         <svg viewBox="0 0 16 16" width="13" height="13"><rect x="2" y="2.5" width="12" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.2" /><path d="M2 9.5h12" stroke="currentColor" stroke-width="1.2" /></svg>
         Terminal
@@ -233,6 +247,16 @@ const totals = computed(() => {
 }
 .del {
   color: var(--red);
+}
+.claude {
+  color: var(--claude);
+}
+.note {
+  max-width: 420px;
+  overflow: hidden;
+  color: var(--fg);
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .version {
   font-family: var(--font-mono);

@@ -28,12 +28,14 @@ src/
   lib/pty.ts              ponte com o backend (invoke + Channel de bytes brutos)
   lib/git.ts              tipos e chamadas de git
   lib/github.ts           PR, checks e runs (via gh); useGithub.ts faz o polling
+  lib/links.ts, paths.ts  URLs e caminhos de arquivo clicáveis na saída do terminal
   lib/shortcuts.ts        atalhos globais (o terminal ignora essas teclas)
 src-tauri/src/
   pty.rs                  sessões de shell (spawn/write/resize/kill/info via /proc)
   git.rs                  status, ls-files, branches, checkout, fetch, info do repo (usa o binário `git`)
   gh.rs                   PR e runs via `gh`; open_url (xdg-open, só http(s))
-  files.rs                leitura de arquivo pro visualizador
+  claude.rs               avisos do Claude Code: hooks gravam o estado da aba (TERM7_PANE) e o term7 lê no polling
+  files.rs                leitura de arquivo pro visualizador; resolve_paths (caminhos clicáveis)
   session.rs              session.json em ~/.local/share/br.tec.code7.term7/
 ```
 

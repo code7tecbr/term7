@@ -20,7 +20,7 @@ jobs:
   # 1. Lê os commits (Conventional Commits), decide a versão e cria a tag + release.
   version:
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.semrel.outputs.version }}
     steps:
@@ -107,7 +107,7 @@ jobs:
   cleanup:
     needs: build-deb
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       KEEP: 3

@@ -1,4 +1,5 @@
 import { computed, reactive } from "vue";
+import type { ClaudeState } from "../lib/pty";
 
 export const COLORS = ["#7aa2f7", "#9ece6a", "#e0af68", "#f7768e", "#bb9af7", "#7dcfff", "#ff9e64"];
 
@@ -26,7 +27,11 @@ export interface Group {
   collapsed: boolean;
 }
 
-export type FileMode = "file" | "changes";
+/** file = código; changes = com as alterações; preview = Markdown/HTML renderizado. */
+export type FileMode = "file" | "changes" | "preview";
+
+/** Arquivos que dá pra ver renderizados (Markdown e HTML). */
+export const canPreview = (path: string) => /\.(md|markdown|html?)$/i.test(path);
 
 /** Arquivo aberto numa aba da área principal. */
 export interface OpenFile {
@@ -36,6 +41,8 @@ export interface OpenFile {
   /** Nome antigo, quando o arquivo foi renomeado (pra comparar com o HEAD). */
   origPath: string | null;
   mode: FileMode;
+  /** Linha pra mostrar ao abrir (1 = primeira), quando veio de `arquivo:42`. */
+  line?: number;
 }
 
 export interface Tab {
@@ -46,6 +53,10 @@ export interface Tab {
   cwd: string | null;
   /** Processo em primeiro plano. */
   process: string | null;
+  /** Estado do Claude CLI rodando na aba (via hooks). */
+  claude: ClaudeState | null;
+  /** O Claude pediu algo ou terminou enquanto a aba não estava à vista. */
+  attention: "waiting" | "done" | null;
   groupId: number | null;
   /** Nome dado pelo usuário. null = título automático (pasta/processo). */
   name: string | null;
@@ -73,6 +84,8 @@ function makeTab(fields: Partial<Tab>): Tab {
     initialCwd: null,
     cwd: null,
     process: null,
+    claude: null,
+    attention: null,
     groupId: null,
     name: null,
     color: null,
@@ -199,7 +212,10 @@ export function restoreLayout(
         color: t.color ?? null,
         // Ignora tag desconhecida (sessão de outra versão).
         tag: findTag(t.tag ?? null)?.id ?? null,
-        files: (t.files ?? []).map((f) => ({ ...f, mode: f.mode === "changes" ? "changes" : "file" })),
+        files: (t.files ?? []).map((f) => ({
+          ...f,
+          mode: f.mode === "changes" || (f.mode === "preview" && canPreview(f.path)) ? f.mode : "file",
+        })),
         view: t.view !== undefined && t.view < (t.files?.length ?? 0) ? t.view : -1,
         panelAlive: !!t.panelOpen,
         panelOpen: !!t.panelOpen,
