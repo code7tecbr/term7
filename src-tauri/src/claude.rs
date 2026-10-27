@@ -19,15 +19,32 @@ use crate::pty::PtyState;
 /// Marca que identifica os hooks do term7 no settings.json (pra atualizar/remover).
 const MARKER: &str = "TERM7_PANE";
 
-/// Evento do Claude Code -> estado da aba. None = sessão acabou (apaga o arquivo).
-const EVENTS: &[(&str, Option<&str>)] = &[
-    ("UserPromptSubmit", Some("working")),
+/// Evento do Claude Code (com matcher opcional) -> estado da aba.
+/// None = apaga o arquivo (sessão nova ou encerrada).
+const EVENTS: &[(&str, Option<&str>, Option<&str>)] = &[
+    // Sessão nova (inclusive depois de /clear) começa sem estado.
+    ("SessionStart", None, None),
+    ("UserPromptSubmit", None, Some("working")),
     // Depois de uma permissão aprovada a ferramenta roda: volta a "trabalhando".
-    ("PostToolUse", Some("working")),
-    ("Notification", Some("waiting")),
-    ("Stop", Some("done")),
-    ("SessionEnd", None),
+    ("PostToolUse", None, Some("working")),
+    // Só o que de fato espera você. Sem filtro entrava o idle_prompt, que chega
+    // ~60 s depois de terminar e deixava a aba "esperando" pra sempre.
+    (
+        "Notification",
+        Some("permission_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input"),
+        Some("waiting"),
+    ),
+    ("Stop", None, Some("done")),
+    ("SessionEnd", None, None),
 ];
+
+fn hook_entry(matcher: Option<&str>, state: Option<&str>) -> Value {
+    let mut entry = json!({ "hooks": [{ "type": "command", "command": hook_command(state) }] });
+    if let Some(m) = matcher {
+        entry["matcher"] = json!(m);
+    }
+    entry
+}
 
 /// Id da aba visto pelos hooks. Leva o PID do app pra duas janelas (ou um
 /// reinício) não lerem o arquivo uma da outra.
@@ -118,11 +135,19 @@ fn is_ours(entry: &Value) -> bool {
 }
 
 fn installed(settings: &Value) -> bool {
-    EVENTS.iter().all(|(event, state)| {
-        settings["hooks"][event].as_array().is_some_and(|entries| {
-            entries.iter().any(|e| is_ours(e) && e["hooks"][0]["command"] == hook_command(*state).as_str())
-        })
+    EVENTS.iter().all(|(event, matcher, state)| {
+        let expected = hook_entry(*matcher, *state);
+        settings["hooks"][event]
+            .as_array()
+            .is_some_and(|entries| entries.iter().any(|e| is_ours(e) && *e == expected))
     })
+}
+
+/// Tem algum hook do term7, mesmo que de uma versão antiga.
+fn has_ours(settings: &Value) -> bool {
+    settings["hooks"]
+        .as_object()
+        .is_some_and(|hooks| hooks.values().filter_map(Value::as_array).flatten().any(is_ours))
 }
 
 /// Coloca (ou atualiza) os hooks do term7, sem mexer nos outros hooks nem no resto do arquivo.
@@ -131,11 +156,15 @@ fn install(path: &Path) -> Result<(), String> {
     let root = settings.as_object_mut().ok_or("settings.json não é um objeto")?;
     let hooks = root.entry("hooks").or_insert_with(|| Value::Object(Map::new()));
     let hooks = hooks.as_object_mut().ok_or("\"hooks\" no settings.json não é um objeto")?;
-    for (event, state) in EVENTS {
+    // Tira os do term7 de todos os eventos (inclusive de eventos que deixaram de ser usados).
+    for entries in hooks.values_mut().filter_map(Value::as_array_mut) {
+        entries.retain(|e| !is_ours(e));
+    }
+    hooks.retain(|_, v| v.as_array().is_none_or(|a| !a.is_empty()));
+    for (event, matcher, state) in EVENTS {
         let entries = hooks.entry(*event).or_insert_with(|| Value::Array(vec![]));
         let entries = entries.as_array_mut().ok_or(format!("\"hooks.{event}\" não é uma lista"))?;
-        entries.retain(|e| !is_ours(e));
-        entries.push(json!({ "hooks": [{ "type": "command", "command": hook_command(*state) }] }));
+        entries.push(hook_entry(*matcher, *state));
     }
 
     if let Some(dir) = path.parent() {
@@ -160,7 +189,13 @@ pub struct HooksStatus {
 }
 
 fn status(path: PathBuf) -> Result<HooksStatus, String> {
-    let installed = installed(&read_settings(&path)?);
+    let settings = read_settings(&path)?;
+    // Já ativou antes, mas com hooks de uma versão antiga: atualiza sozinho.
+    if has_ours(&settings) && !installed(&settings) {
+        install(&path)?;
+        return status(path);
+    }
+    let installed = installed(&settings);
     Ok(HooksStatus { installed, settings_path: path.to_string_lossy().into_owned() })
 }
 
@@ -204,6 +239,7 @@ mod tests {
 
         install(&path).unwrap();
         install(&path).unwrap(); // instalar de novo não duplica
+        assert!(has_ours(&read_settings(&path).unwrap()));
 
         let s = read_settings(&path).unwrap();
         assert!(installed(&s));
@@ -218,10 +254,187 @@ mod tests {
     }
 
     #[test]
+    fn notification_ignora_o_idle_prompt() {
+        let entry = hook_entry(EVENTS[3].1, EVENTS[3].2);
+        assert_eq!(EVENTS[3].0, "Notification");
+        let matcher = entry["matcher"].as_str().unwrap();
+        assert!(matcher.contains("permission_prompt"));
+        assert!(!matcher.contains("idle_prompt"));
+    }
+
+    #[test]
+    fn atualiza_hooks_antigos() {
+        let dir = std::env::temp_dir().join(format!("term7-test-old-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        // Instalação da versão anterior: Notification sem matcher e sem SessionStart.
+        let old = json!({ "hooks": { "Notification": [{ "hooks": [{ "type": "command", "command": hook_command(Some("waiting")) }] }] } });
+        std::fs::write(&path, old.to_string()).unwrap();
+        let st = status(path.clone()).unwrap();
+        assert!(st.installed);
+        let s = read_settings(&path).unwrap();
+        assert_eq!(s["hooks"]["Notification"].as_array().unwrap().len(), 1);
+        assert!(s["hooks"]["SessionStart"].is_array());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn comando_do_hook() {
         assert_eq!(
             hook_command(Some("done")),
             r#"[ -n "$TERM7_PANE" ] && d="${XDG_RUNTIME_DIR:-/tmp}/term7" && mkdir -p "$d" && echo done > "$d/claude-$TERM7_PANE"; exit 0"#
         );
+    }
+}
+
+// ---- servidores MCP do Claude da aba ----
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServer {
+    name: String,
+    /// Endereço ou comando, sem query string nem argumentos (podem ter token).
+    target: String,
+    /// connected | needs_auth | failed | unknown
+    status: &'static str,
+    /// Motivo da falha, quando houver.
+    detail: Option<String>,
+}
+
+/// Endereço sem credenciais: URL fica só com host e caminho; comando, só com o
+/// executável e o primeiro argumento (ex.: `npx -y`, sem `--api-key ...`).
+fn safe_target(target: &str) -> String {
+    let target = target.trim();
+    let (main, transport) = match target.rsplit_once(" (") {
+        Some((m, t)) if t.ends_with(')') => (m, format!(" ({t}")),
+        _ => (target, String::new()),
+    };
+    if let Some((scheme, rest)) = main.split_once("://") {
+        let rest = rest.split(['?', '#']).next().unwrap_or("");
+        let rest = rest.rsplit_once('@').map_or(rest, |(_, r)| r);
+        format!("{scheme}://{rest}{transport}")
+    } else {
+        main.split_whitespace().take(2).collect::<Vec<_>>().join(" ")
+    }
+}
+
+fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            // CSI: ESC [ ... letra final
+            for c in chars.by_ref() {
+                if c.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Lê a saída do `claude mcp list`: "nome: endereço - ✔ Connected".
+fn parse_mcp_list(output: &str) -> Vec<McpServer> {
+    strip_ansi(output)
+        .lines()
+        .filter_map(|line| {
+            let (name, rest) = line.split_once(": ")?;
+            let (target, status) = rest.rsplit_once(" - ")?;
+            let lower = status.to_lowercase();
+            let (status, detail) = if lower.contains("needs auth") || lower.contains("authenticat") {
+                ("needs_auth", None)
+            } else if lower.contains("connected") && !lower.contains("fail") {
+                ("connected", None)
+            } else if lower.contains("fail") || status.starts_with(['✘', '✗', '×']) {
+                let detail = status.split_once('—').map(|(_, d)| d.trim().to_string());
+                ("failed", detail)
+            } else {
+                ("unknown", Some(status.trim().to_string()))
+            };
+            Some(McpServer { name: name.trim().to_string(), target: safe_target(target), status, detail })
+        })
+        .collect()
+}
+
+/// Roda `claude mcp list` como o Claude da aba roda: mesmo binário, ambiente e
+/// pasta (pega o CLAUDE_CONFIG_DIR e os MCPs do projeto certos).
+fn mcp_list(foreground: u32) -> Result<Vec<McpServer>, String> {
+    let comm = std::fs::read_to_string(format!("/proc/{foreground}/comm")).unwrap_or_default();
+    if comm.trim() != "claude" {
+        return Err("o Claude não está rodando nesta aba".into());
+    }
+    let exe = std::fs::read_link(format!("/proc/{foreground}/exe")).map_err(|e| e.to_string())?;
+    let cwd = std::fs::read_link(format!("/proc/{foreground}/cwd")).map_err(|e| e.to_string())?;
+    let environ = std::fs::read(format!("/proc/{foreground}/environ")).map_err(|e| e.to_string())?;
+    let env = environ.split(|&b| b == 0).filter_map(|var| {
+        let var = std::str::from_utf8(var).ok()?;
+        let (k, v) = var.split_once('=')?;
+        // Sem o TERM7_PANE: um SessionEnd desse comando apagaria o estado da aba.
+        (k != MARKER).then(|| (k.to_string(), v.to_string()))
+    });
+
+    let mut child = std::process::Command::new(exe)
+        .args(["mcp", "list"])
+        .current_dir(cwd)
+        .env_clear()
+        .envs(env)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+
+    // A checagem conecta em cada servidor; um travado não pode segurar pra sempre.
+    let deadline = std::time::Instant::now() + Duration::from_secs(45);
+    loop {
+        match child.try_wait().map_err(|e| e.to_string())? {
+            Some(_) => break,
+            None if std::time::Instant::now() > deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err("o claude mcp list demorou demais".into());
+            }
+            None => std::thread::sleep(Duration::from_millis(100)),
+        }
+    }
+    let mut out = String::new();
+    use std::io::Read;
+    child.stdout.take().ok_or("sem saída")?.read_to_string(&mut out).map_err(|e| e.to_string())?;
+    Ok(parse_mcp_list(&out))
+}
+
+#[tauri::command]
+pub async fn claude_mcp_list(state: State<'_, PtyState>, id: u32) -> Result<Vec<McpServer>, String> {
+    let fg = crate::pty::foreground_pid(&state, id).ok_or("aba não encontrada")?;
+    tauri::async_runtime::spawn_blocking(move || mcp_list(fg))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[cfg(test)]
+mod mcp_tests {
+    use super::*;
+
+    #[test]
+    fn le_a_saida_do_mcp_list() {
+        let out = "Checking MCP server health…\n\n\
+            context7: https://mcp.context7.com/mcp (HTTP) - ✔ Connected\n\
+            paper: http://127.0.0.1:29979/mcp (HTTP) - ✘ Failed to connect — ECONNREFUSED\n\
+            penpot: https://design.penpot.app/mcp/stream?userToken=SEGREDO (HTTP) - ✔ Connected\n\
+            claude.ai Gmail: https://gmailmcp.googleapis.com/mcp/v1 - ! Needs authentication\n\
+            ctx: npx -y @upstash/context7-mcp --api-key SEGREDO - ✔ Connected\n";
+        let s = parse_mcp_list(out);
+        assert_eq!(s.len(), 5);
+        assert_eq!(s[0].status, "connected");
+        assert_eq!(s[1].status, "failed");
+        assert_eq!(s[1].detail.as_deref(), Some("ECONNREFUSED"));
+        assert_eq!(s[2].target, "https://design.penpot.app/mcp/stream (HTTP)");
+        assert_eq!(s[3].name, "claude.ai Gmail");
+        assert_eq!(s[3].status, "needs_auth");
+        assert_eq!(s[4].target, "npx -y");
+        assert!(s.iter().all(|x| !x.target.contains("SEGREDO")));
     }
 }
