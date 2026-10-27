@@ -54,6 +54,15 @@ const sections = computed<Section[]>(() => {
 const stripe = (tab: Tab) => tab.color ?? findGroup(tab.groupId)?.color ?? "transparent";
 const isClaude = (tab: Tab) => tab.process === "claude";
 
+/** Grupo recolhido herda o aviso mais forte das abas dele, pra não esconder um pedido. */
+function groupAttention(tabs: Tab[]) {
+  if (tabs.some((t) => t.attention === "waiting")) return "attn-waiting";
+  if (tabs.some((t) => t.attention === "done")) return "attn-done";
+  return "";
+}
+
+const ATTENTION_TITLE = { waiting: "O Claude está esperando você", done: "O Claude terminou" } as const;
+
 // ---- renomear (aba ou grupo) ----
 const editing = ref<{ kind: "tab" | "group"; id: number } | null>(null);
 const editName = ref("");
@@ -255,6 +264,7 @@ function groupMenu(e: MouseEvent, group: Group) {
           :class="{
             'drop-inside': hint?.kind === 'group' && hint.id === section.group.id && hint.pos === 'inside',
             lifted: dragging?.kind === 'group' && dragging.id === section.group.id,
+            [groupAttention(section.tabs)]: section.group.collapsed,
           }"
           :data-group-id="section.group.id"
           @pointerdown="startDrag($event, { kind: 'group', id: section.group.id, label: section.group.name })"
@@ -277,6 +287,7 @@ function groupMenu(e: MouseEvent, group: Group) {
           />
           <span v-else class="name">{{ section.group.name }}</span>
           <span v-if="findTag(section.group.tag)" class="tag" :style="{ '--tag': findTag(section.group.tag)!.color }">{{ findTag(section.group.tag)!.label }}</span>
+          <span v-if="section.group.collapsed && groupAttention(section.tabs)" class="attn-dot" />
           <span class="count">{{ section.tabs.length }}</span>
         </div>
 
@@ -289,6 +300,8 @@ function groupMenu(e: MouseEvent, group: Group) {
               {
                 active: tab.id === store.activeId,
                 colored: !!tab.color,
+                'attn-waiting': tab.attention === 'waiting',
+                'attn-done': tab.attention === 'done',
                 lifted: (dragging?.kind === 'tab' && dragging.id === tab.id) || (dragging?.kind === 'group' && dragging.id === tab.groupId),
               },
               dropClass('tab', tab.id),
@@ -302,7 +315,11 @@ function groupMenu(e: MouseEvent, group: Group) {
             @dblclick="startRename('tab', tab.id, tabTitle(tab, props.home))"
             @contextmenu.prevent="tabMenu($event, tab)"
           >
-            <span class="icon-slot" :class="{ claude: isClaude(tab) }">
+            <span
+              class="icon-slot"
+              :class="[{ claude: isClaude(tab) }, tab.claude && isClaude(tab) ? `claude-${tab.claude}` : '']"
+              :title="tab.attention ? ATTENTION_TITLE[tab.attention] : ''"
+            >
               <svg v-if="isClaude(tab)" viewBox="0 0 16 16" width="14" height="14"><path d="M8 1.5v13M1.5 8h13M3.4 3.4l9.2 9.2M12.6 3.4l-9.2 9.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
               <svg v-else viewBox="0 0 16 16" width="14" height="14"><path d="M3 4.5l3.5 3.5L3 11.5M8.5 12h4.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
             </span>
@@ -324,6 +341,7 @@ function groupMenu(e: MouseEvent, group: Group) {
               </span>
               <span v-if="tab.cwd" class="sub">{{ prettyPath(tab.cwd, props.home) }}</span>
             </div>
+            <span v-if="tab.attention === 'done'" class="attn-dot" title="O Claude terminou" />
             <button class="close" title="Fechar (Ctrl+Shift+W)" @pointerdown.stop @click.stop="closeTab(tab.id)" @dblclick.stop>
               <svg viewBox="0 0 16 16" width="12" height="12"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
             </button>
@@ -553,6 +571,49 @@ section.group > .tab:first-of-type {
 .icon-slot.claude {
   color: var(--claude);
   opacity: 1;
+}
+/* Avisos do Claude (hooks): trabalhando gira o ícone; esperando você chama atenção. */
+.icon-slot.claude-working svg {
+  animation: spin 2.4s linear infinite;
+}
+.icon-slot.claude-waiting {
+  animation: blink 1.2s ease-in-out infinite;
+}
+.tab.attn-waiting,
+.group-header.attn-waiting {
+  background: color-mix(in srgb, var(--claude) 18%, transparent);
+  color: var(--fg);
+  animation: attn 1.6s ease-in-out infinite;
+}
+.attn-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: var(--green);
+}
+.group-header.attn-waiting .attn-dot {
+  background: var(--claude);
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+@keyframes attn {
+  0%,
+  100% {
+    box-shadow: inset 0 0 0 1.5px var(--claude);
+  }
+  50% {
+    box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--claude) 35%, transparent);
+  }
 }
 .text {
   display: flex;

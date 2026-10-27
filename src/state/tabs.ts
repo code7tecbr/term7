@@ -1,4 +1,5 @@
 import { computed, reactive } from "vue";
+import type { ClaudeState } from "../lib/pty";
 
 export const COLORS = ["#7aa2f7", "#9ece6a", "#e0af68", "#f7768e", "#bb9af7", "#7dcfff", "#ff9e64"];
 
@@ -46,6 +47,10 @@ export interface Tab {
   cwd: string | null;
   /** Processo em primeiro plano. */
   process: string | null;
+  /** Estado do Claude CLI rodando na aba (via hooks). */
+  claude: ClaudeState | null;
+  /** O Claude pediu algo ou terminou enquanto a aba não estava à vista. */
+  attention: "waiting" | "done" | null;
   groupId: number | null;
   /** Nome dado pelo usuário. null = título automático (pasta/processo). */
   name: string | null;
@@ -73,6 +78,8 @@ function makeTab(fields: Partial<Tab>): Tab {
     initialCwd: null,
     cwd: null,
     process: null,
+    claude: null,
+    attention: null,
     groupId: null,
     name: null,
     color: null,
