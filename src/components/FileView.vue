@@ -7,7 +7,10 @@ import { LanguageDescription, syntaxHighlighting } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
 import { unifiedMergeView } from "@codemirror/merge";
 import { oneDarkHighlightStyle } from "@codemirror/theme-one-dark";
+import { marked } from "marked";
+import DOMPurify from "dompurify";
 import { gitShowHead, readTextFile, type GitStatus } from "../lib/git";
+import { openUrl } from "../lib/github";
 import type { OpenFile } from "../state/tabs";
 
 /** Um arquivo aberto na área principal: atual ou com as alterações marcadas. */
@@ -15,6 +18,8 @@ const props = defineProps<{ file: OpenFile; status: GitStatus | null }>();
 
 const host = ref<HTMLDivElement>();
 const note = ref<string | null>(null);
+/** Markdown renderizado (já sanitizado) ou HTML do arquivo, no modo preview. */
+const preview = ref<{ kind: "md" | "html"; html: string } | null>(null);
 let view: EditorView | undefined;
 
 const active = computed(() => props.file);
@@ -80,6 +85,16 @@ async function load() {
   }
 
   const text = current?.text ?? "";
+
+  if (file.mode === "preview") {
+    preview.value = /\.html?$/i.test(file.path)
+      ? { kind: "html", html: text }
+      : // Markdown vira HTML e passa pelo DOMPurify: o arquivo pode vir de qualquer lugar.
+        { kind: "md", html: DOMPurify.sanitize(marked.parse(text, { async: false })) };
+    return;
+  }
+  preview.value = null;
+
   const extensions: Extension[] = [
     basicSetup,
     EditorState.readOnly.of(true),
@@ -103,10 +118,32 @@ async function load() {
   const top = view.scrollDOM.scrollTop;
   view.setState(EditorState.create({ doc: text, extensions }));
   view.dom.dataset.file = `${file.root}/${file.path}`;
-  if (sameFile) requestAnimationFrame(() => view && (view.scrollDOM.scrollTop = top));
+  if (file.line) goToLine(file.line);
+  else if (sameFile) requestAnimationFrame(() => view && (view.scrollDOM.scrollTop = top));
+}
+
+/** Mostra a linha pedida (veio de um caminho `arquivo:42` no terminal). */
+function goToLine(line: number) {
+  if (!view) return;
+  const doc = view.state.doc;
+  const pos = doc.line(Math.min(Math.max(line, 1), doc.lines)).from;
+  view.dispatch({ selection: { anchor: pos }, effects: EditorView.scrollIntoView(pos, { y: "center" }) });
+}
+
+/** Links no Markdown abrem no navegador; nunca navegam a janela do term7. */
+function onPreviewClick(e: MouseEvent) {
+  const a = (e.target as HTMLElement).closest("a");
+  if (!a) return;
+  e.preventDefault();
+  const href = a.getAttribute("href") ?? "";
+  if (/^https?:\/\//.test(href)) openUrl(href).catch(() => {});
 }
 
 watch([() => props.file.path, () => props.file.root, () => props.file.mode, changeKey], load);
+watch(
+  () => props.file.line,
+  (line) => line && props.file.mode !== "preview" && goToLine(line),
+);
 
 onMounted(() => {
   view = new EditorView({ parent: host.value! });
@@ -119,9 +156,14 @@ onBeforeUnmount(() => view?.destroy());
 
 <template>
   <section class="viewer">
-    <div class="path">{{ file.path }}</div>
+    <!-- Fora do repositório (ex.: /tmp/...): mostra o caminho completo. -->
+    <div class="path">{{ status?.root === file.root ? file.path : `${file.root}/${file.path}`.replace(/^\/\//, "/") }}</div>
     <div v-if="note" class="note">{{ note }}</div>
-    <div ref="host" class="editor" />
+    <div v-show="!preview" ref="host" class="editor" />
+    <!-- eslint-disable-next-line vue/no-v-html -- sanitizado com DOMPurify -->
+    <div v-if="preview?.kind === 'md'" class="markdown" @click="onPreviewClick" v-html="preview.html" />
+    <!-- HTML num iframe sem scripts e sem acesso ao app (sandbox vazio). -->
+    <iframe v-else-if="preview?.kind === 'html'" class="html" sandbox="" :srcdoc="preview.html" />
   </section>
 </template>
 
@@ -146,6 +188,81 @@ onBeforeUnmount(() => view?.destroy());
   flex-shrink: 0;
   color: var(--yellow);
   font-size: 12px;
+}
+.markdown {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 32px 40px;
+  color: var(--fg);
+  font-size: 14px;
+  line-height: 1.65;
+  user-select: text;
+}
+.markdown :deep(h1),
+.markdown :deep(h2),
+.markdown :deep(h3) {
+  margin: 1.4em 0 0.5em;
+  line-height: 1.3;
+}
+.markdown :deep(h1) {
+  font-size: 1.6em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--border);
+}
+.markdown :deep(h2) {
+  font-size: 1.3em;
+  padding-bottom: 0.25em;
+  border-bottom: 1px solid var(--border);
+}
+.markdown :deep(a) {
+  color: var(--accent);
+}
+.markdown :deep(code) {
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+.markdown :deep(pre) {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  overflow-x: auto;
+}
+.markdown :deep(pre code) {
+  padding: 0;
+  background: none;
+}
+.markdown :deep(blockquote) {
+  margin: 0;
+  padding: 0 1em;
+  border-left: 3px solid var(--border);
+  color: var(--fg-muted);
+}
+.markdown :deep(table) {
+  border-collapse: collapse;
+}
+.markdown :deep(th),
+.markdown :deep(td) {
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+}
+.markdown :deep(hr) {
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+.markdown :deep(img) {
+  max-width: 100%;
+}
+.html {
+  flex: 1;
+  min-height: 0;
+  border: 0;
+  /* Página HTML costuma assumir fundo claro. */
+  background: #fff;
 }
 .editor {
   flex: 1;

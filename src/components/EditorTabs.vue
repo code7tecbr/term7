@@ -2,7 +2,7 @@
 import { computed } from "vue";
 import type { ChangeKind, GitStatus } from "../lib/git";
 import { closeFile, showTerminal } from "../state/editor";
-import { tabTitle, type OpenFile, type Tab } from "../state/tabs";
+import { canPreview, tabTitle, type FileMode, type OpenFile, type Tab } from "../state/tabs";
 
 /** Abas da área principal: o terminal e os arquivos abertos, como no VS Code. */
 const props = defineProps<{ tab: Tab; home: string | null; status: GitStatus | null }>();
@@ -35,7 +35,18 @@ const labels = computed(() =>
 
 const shown = computed(() => (props.tab.view >= 0 ? props.tab.files[props.tab.view] : null));
 /** O toggle só faz sentido em arquivo com alteração (ou já no modo alterações). */
-const canToggle = computed(() => !!shown.value && (!!change(shown.value) || shown.value.mode === "changes"));
+/** Modos que fazem sentido pro arquivo mostrado; o toggle aparece com 2 ou mais. */
+const modes = computed(() => {
+  const file = shown.value;
+  if (!file) return [];
+  const list: { mode: FileMode; label: string; title: string }[] = [];
+  if (canPreview(file.path)) list.push({ mode: "preview", label: "Visualizar", title: "Markdown/HTML renderizado" });
+  list.push({ mode: "file", label: canPreview(file.path) ? "Código" : "Arquivo", title: "Arquivo atual, sem marcações" });
+  if (change(file) || file.mode === "changes") {
+    list.push({ mode: "changes", label: "Alterações", title: "Arquivo com as alterações em relação ao último commit" });
+  }
+  return list;
+});
 </script>
 
 <template>
@@ -65,10 +76,9 @@ const canToggle = computed(() => !!shown.value && (!!change(shown.value) || show
       </div>
     </div>
 
-    <div v-if="shown && canToggle" class="modes">
-      <button :class="{ on: shown.mode === 'file' }" title="Arquivo atual, sem marcações" @click="shown.mode = 'file'">Arquivo</button>
-      <button :class="{ on: shown.mode === 'changes' }" title="Arquivo com as alterações em relação ao último commit" @click="shown.mode = 'changes'">
-        Alterações
+    <div v-if="shown && modes.length > 1" class="modes">
+      <button v-for="m in modes" :key="m.mode" :class="{ on: shown.mode === m.mode }" :title="m.title" @click="shown.mode = m.mode">
+        {{ m.label }}
       </button>
     </div>
   </div>

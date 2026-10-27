@@ -1,4 +1,4 @@
-import { activeTab, type OpenFile, type Tab } from "./tabs";
+import { activeTab, canPreview, type OpenFile, type Tab } from "./tabs";
 
 const same = (a: Pick<OpenFile, "root" | "path">, b: Pick<OpenFile, "root" | "path">) =>
   a.root === b.root && a.path === b.path;
@@ -9,12 +9,15 @@ export function openFile(file: Omit<OpenFile, "mode"> & { mode?: OpenFile["mode"
   const i = tab.files.findIndex((f) => same(f, file));
   if (i >= 0) {
     if (file.mode) tab.files[i].mode = file.mode;
+    if (file.line) tab.files[i].line = file.line;
     tab.view = i;
     return;
   }
   // Como no VS Code: a nova aba entra logo depois da que está aberta.
   const at = tab.view >= 0 ? tab.view + 1 : tab.files.length;
-  tab.files.splice(at, 0, { mode: "file", ...file });
+  // Markdown/HTML abrem renderizados, a não ser que peçam outro modo (ex.: alterações).
+  const mode = file.mode ?? (canPreview(file.path) && !file.line ? "preview" : "file");
+  tab.files.splice(at, 0, { ...file, mode });
   tab.view = at;
 }
 

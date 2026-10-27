@@ -27,7 +27,11 @@ export interface Group {
   collapsed: boolean;
 }
 
-export type FileMode = "file" | "changes";
+/** file = código; changes = com as alterações; preview = Markdown/HTML renderizado. */
+export type FileMode = "file" | "changes" | "preview";
+
+/** Arquivos que dá pra ver renderizados (Markdown e HTML). */
+export const canPreview = (path: string) => /\.(md|markdown|html?)$/i.test(path);
 
 /** Arquivo aberto numa aba da área principal. */
 export interface OpenFile {
@@ -37,6 +41,8 @@ export interface OpenFile {
   /** Nome antigo, quando o arquivo foi renomeado (pra comparar com o HEAD). */
   origPath: string | null;
   mode: FileMode;
+  /** Linha pra mostrar ao abrir (1 = primeira), quando veio de `arquivo:42`. */
+  line?: number;
 }
 
 export interface Tab {
@@ -206,7 +212,10 @@ export function restoreLayout(
         color: t.color ?? null,
         // Ignora tag desconhecida (sessão de outra versão).
         tag: findTag(t.tag ?? null)?.id ?? null,
-        files: (t.files ?? []).map((f) => ({ ...f, mode: f.mode === "changes" ? "changes" : "file" })),
+        files: (t.files ?? []).map((f) => ({
+          ...f,
+          mode: f.mode === "changes" || (f.mode === "preview" && canPreview(f.path)) ? f.mode : "file",
+        })),
         view: t.view !== undefined && t.view < (t.files?.length ?? 0) ? t.view : -1,
         panelAlive: !!t.panelOpen,
         panelOpen: !!t.panelOpen,
