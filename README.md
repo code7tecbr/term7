@@ -76,7 +76,7 @@ A cada push na `main`, o workflow `.github/workflows/release.yml` cria a release
 
 ## Roadmap
 
-- [x] Abas na lateral, com nome e cor por aba
+- [x] Abas na lateral, com nome, cor e tag de etapa (discovery, spec, plan, code, review, test, close/merge), também nos grupos
 - [x] Grupos de abas (nome, cor, recolher) e arrastar/soltar
 - [x] Sessão restaurada ao reabrir (abas, grupos, pastas)
 - [x] Terminal inferior por aba (`Ctrl+'`)

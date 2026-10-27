@@ -16,6 +16,7 @@ export function snapshot(): string {
       groupId: t.groupId,
       name: t.name,
       color: t.color,
+      tag: t.tag,
       panelOpen: t.panelOpen,
       panelHeight: t.panelHeight,
     })),
