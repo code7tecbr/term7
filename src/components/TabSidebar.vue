@@ -6,6 +6,7 @@ import {
   TAGS,
   findTag,
   setTabTag,
+  setGroupTag,
   type TagId,
   activate,
   closeGroup,
@@ -215,6 +216,7 @@ function groupMenu(e: MouseEvent, group: Group) {
     y: e.clientY,
     items: [
       { colors: COLORS, selected: group.color, pick: (c) => c && setGroupColor(group.id, c) },
+      { tags: TAGS, selected: group.tag, pick: (t) => setGroupTag(group.id, t as TagId | null) },
       { label: "Renomear grupo", action: () => startRename("group", group.id, group.name) },
       { label: "Nova aba no grupo", action: () => newTabInGroup(group.id) },
       { label: group.collapsed ? "Expandir" : "Recolher", action: () => toggleCollapsed(group.id) },
@@ -274,6 +276,7 @@ function groupMenu(e: MouseEvent, group: Group) {
             @click.stop
           />
           <span v-else class="name">{{ section.group.name }}</span>
+          <span v-if="findTag(section.group.tag)" class="tag" :style="{ '--tag': findTag(section.group.tag)!.color }">{{ findTag(section.group.tag)!.label }}</span>
           <span class="count">{{ section.tabs.length }}</span>
         </div>
 
@@ -285,12 +288,13 @@ function groupMenu(e: MouseEvent, group: Group) {
             :class="[
               {
                 active: tab.id === store.activeId,
+                colored: !!tab.color,
                 lifted: (dragging?.kind === 'tab' && dragging.id === tab.id) || (dragging?.kind === 'group' && dragging.id === tab.groupId),
               },
               dropClass('tab', tab.id),
             ]"
             :data-tab-id="tab.id"
-            :style="{ '--stripe': stripe(tab) }"
+            :style="{ '--stripe': stripe(tab), '--fill': tab.color ?? undefined }"
             :title="tab.cwd ?? ''"
             @mousedown="!isEditing('tab', tab.id) && ($event.preventDefault(), $event.button === 1 && closeTab(tab.id))"
             @pointerdown="startDrag($event, { kind: 'tab', id: tab.id, label: tabTitle(tab, props.home) })"
@@ -441,8 +445,12 @@ section.drop-after::after,
   text-overflow: ellipsis;
   pointer-events: none;
 }
+/* O grupo inteiro fica com um fundo leve na cor dele; o cabeçalho, mais forte. */
 section.group {
   margin: 4px 0;
+  padding-bottom: 2px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--group) 7%, transparent);
 }
 .group-header {
   display: flex;
@@ -455,8 +463,11 @@ section.group {
   font-weight: 600;
   cursor: pointer;
 }
+.group-header {
+  background: color-mix(in srgb, var(--group) 20%, transparent);
+}
 .group-header:hover {
-  background: var(--hover);
+  background: color-mix(in srgb, var(--group) 27%, transparent);
 }
 .chevron {
   flex-shrink: 0;
@@ -487,7 +498,7 @@ section.group {
 }
 /* Abas do grupo ficam recuadas com uma linha na cor do grupo. */
 section.group .tab {
-  margin-left: 10px;
+  margin: 1px 4px 1px 10px;
 }
 section.group > .tab:first-of-type {
   margin-top: 2px;
@@ -520,6 +531,17 @@ section.group > .tab:first-of-type {
 .tab.active {
   background: var(--active);
   color: var(--fg);
+}
+/* Cor da aba preenche o fundo, mais forte quando ativa. */
+.tab.colored {
+  background: color-mix(in srgb, var(--fill) 14%, transparent);
+  color: var(--fg);
+}
+.tab.colored:hover {
+  background: color-mix(in srgb, var(--fill) 20%, transparent);
+}
+.tab.colored.active {
+  background: color-mix(in srgb, var(--fill) 30%, transparent);
 }
 .icon-slot {
   display: grid;

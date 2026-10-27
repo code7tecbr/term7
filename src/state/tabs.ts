@@ -4,6 +4,7 @@ export const COLORS = ["#7aa2f7", "#9ece6a", "#e0af68", "#f7768e", "#bb9af7", "#
 
 /** Etapas do fluxo de trabalho, na ordem em que acontecem. */
 export const TAGS = [
+  { id: "discovery", label: "discovery", color: "#ff9e64" },
   { id: "spec", label: "spec", color: "#7dcfff" },
   { id: "plan", label: "plan", color: "#73daca" },
   { id: "code", label: "code", color: "#7aa2f7" },
@@ -21,6 +22,7 @@ export interface Group {
   id: number;
   name: string;
   color: string;
+  tag: TagId | null;
   collapsed: boolean;
 }
 
@@ -167,7 +169,7 @@ export function restoreLayout(
   for (const g of groups) {
     const id = nextGroupId++;
     groupIds.set(g.id, id);
-    store.groups.push({ ...g, id });
+    store.groups.push({ ...g, id, tag: findTag(g.tag ?? null)?.id ?? null });
   }
   for (const t of tabs) {
     store.tabs.push(
@@ -324,6 +326,7 @@ export function createGroup(tabId: number) {
     id,
     name: `Grupo ${id}`,
     color: COLORS[(id - 1) % COLORS.length],
+    tag: null,
     collapsed: false,
   };
   store.groups.push(group);
@@ -385,6 +388,11 @@ export function toggleCollapsed(groupId: number) {
 export function renameGroup(groupId: number, name: string) {
   const group = findGroup(groupId);
   if (group) group.name = name.trim() || group.name;
+}
+
+export function setGroupTag(groupId: number, tag: TagId | null) {
+  const group = store.groups.find((g) => g.id === groupId);
+  if (group) group.tag = tag;
 }
 
 export function setGroupColor(groupId: number, color: string) {
