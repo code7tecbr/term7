@@ -1,5 +1,6 @@
 name: Release
 
+# Release só no push na main, que só recebe o PR dev -> main (as features entram na dev).
 on:
   push:
     # dev: só compila, pra manter o cache (Rust e apt) que os PRs pra dev podem ler.

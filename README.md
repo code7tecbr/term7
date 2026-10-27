@@ -72,8 +72,10 @@ mensagens de commit ([Conventional Commits](https://www.conventionalcommits.org/
 | `feat!: ...` / `BREAKING CHANGE` | major |
 | `chore:`, `docs:`, `refactor:` | sem release |
 
-A cada push na `main`, o workflow `.github/workflows/release.yml` cria a release, compila o
-`.deb`, anexa na release e apaga as releases mais antigas, deixando só a atual + 2 anteriores.
+As features entram na branch `dev`; a release sai quando a `dev` é mergeada na `main`. A cada
+push na `main`, o workflow `.github/workflows/release.yml` cria a release, compila o `.deb`, anexa
+na release e apaga as releases mais antigas, deixando só a atual + 2 anteriores. Em PR, o mesmo
+workflow só compila o `.deb`, pra mostrar se o build quebra.
 
 ## Roadmap
 
