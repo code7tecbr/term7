@@ -83,7 +83,7 @@ fica em `0.0.0-dev`, então um build local aparece como `dev`.
 
 ## Roadmap
 
-- [x] Abas na lateral, com nome, cor e tag de etapa (discovery, spec, plan, code, review, test, close/merge), também nos grupos
+- [x] Abas na lateral, com nome, cor e tag de etapa (discovery, spec, plan, code, review, test, close/merge), também nos grupos; PR mergeado marca a aba com close/merge sozinho
 - [x] Grupos de abas (nome, cor, recolher) e arrastar/soltar
 - [x] Sessão restaurada ao reabrir (abas, grupos, pastas)
 - [x] Terminal inferior por aba (`Ctrl+'`)

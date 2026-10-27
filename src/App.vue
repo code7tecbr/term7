@@ -232,6 +232,17 @@ const { repo, github, refresh: refreshGithub } = useGithub(
   computed(() => git.value?.ahead ?? 0),
 );
 
+// PR da aba mergeado: marca a aba com a tag close/merge. Uma vez por PR, pra
+// não brigar com quem tirou a tag na mão depois.
+const mergeTagged = new Map<number, string>();
+watch(github, (status) => {
+  const tab = activeTab.value;
+  if (!tab || status?.kind !== "pr" || status.pr.state !== "MERGED") return;
+  if (mergeTagged.get(tab.id) === status.pr.url) return;
+  mergeTagged.set(tab.id, status.pr.url);
+  if (tab.tag !== "merge") tab.tag = "merge";
+});
+
 // ---- terminal inferior: escrever um comando nele (ex.: gh auth login) ----
 const panelSessions = new Map<number, PtySession>();
 const panelInput = new Map<number, string>();
