@@ -53,20 +53,31 @@ function handleShiftEnter(e: KeyboardEvent) {
   return true;
 }
 
-/** Ctrl+Shift+C / Ctrl+Shift+V. Retorna true se tratou a tecla. */
+/**
+ * Ctrl+Shift+C / Ctrl+Shift+V, e Ctrl+C com texto selecionado (copia em vez de
+ * mandar a interrupção, como no VS Code). Sem seleção, Ctrl+C segue pro programa.
+ * Retorna true se tratou a tecla.
+ */
 function handleClipboard(e: KeyboardEvent, t: Terminal) {
-  if (e.type !== "keydown" || !e.ctrlKey || !e.shiftKey || e.altKey) return false;
+  if (!e.ctrlKey || e.altKey || e.metaKey) return false;
   const key = e.key.toLowerCase();
-  if (key === "c") {
-    const text = t.getSelection();
-    if (text) navigator.clipboard.writeText(text).catch(() => {});
+  const copy = key === "c" && (e.shiftKey || t.hasSelection());
+  if (copy) {
+    if (e.type === "keydown") {
+      const text = t.getSelection();
+      if (text) navigator.clipboard.writeText(text).catch(() => {});
+      // Ctrl+C sozinho limpa a seleção: o próximo Ctrl+C volta a interromper.
+      if (!e.shiftKey) t.clearSelection();
+    }
     return true;
   }
-  if (key === "v") {
-    navigator.clipboard
-      .readText()
-      .then((text) => text && t.paste(text))
-      .catch(() => {});
+  if (key === "v" && e.shiftKey) {
+    if (e.type === "keydown") {
+      navigator.clipboard
+        .readText()
+        .then((text) => text && t.paste(text))
+        .catch(() => {});
+    }
     return true;
   }
   return false;

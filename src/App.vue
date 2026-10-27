@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { homeDir } from "@tauri-apps/api/path";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
 import TerminalView from "./components/TerminalView.vue";
 import TabSidebar from "./components/TabSidebar.vue";
 import StatusBar from "./components/StatusBar.vue";
@@ -12,7 +12,7 @@ import { shownFile } from "./state/editor";
 
 // O visualizador (CodeMirror) é pesado: só carrega quando abrir o primeiro arquivo.
 const FileView = defineAsyncComponent(() => import("./components/FileView.vue"));
-import type { PtySession } from "./lib/pty";
+import { claudeHooksInstall, claudeHooksStatus, type ClaudeHooksStatus, type ClaudeState, type PtySession } from "./lib/pty";
 import { matchShortcut, type Action } from "./lib/shortcuts";
 import { useGitStatus } from "./lib/useGitStatus";
 import { useGithub } from "./lib/useGithub";
@@ -77,9 +77,9 @@ watch(
   (title) => getCurrentWindow().setTitle(title ? `${title} — term7` : "term7").catch(() => {}),
 );
 
-// Pasta atual e processo de cada aba (do terminal principal).
+// Pasta atual, processo e estado do Claude de cada aba (do terminal principal).
+// Roda mesmo com a janela escondida: é aí que o aviso do Claude mais importa.
 async function pollSessions() {
-  if (document.hidden) return;
   for (const tab of store.tabs) {
     const session = sessions.get(tab.id);
     if (!session) continue;
@@ -87,9 +87,65 @@ async function pollSessions() {
     if (!info) continue;
     if (info.cwd) tab.cwd = info.cwd;
     tab.process = info.process;
+    if (info.claude !== tab.claude) onClaudeChange(tab, info.claude);
   }
 }
 const pollTimer = setInterval(pollSessions, 1000);
+
+// ---- avisos do Claude ----
+const windowFocused = ref(document.hasFocus());
+const isVisible = (tab: Tab) => isActive(tab) && windowFocused.value;
+
+function onClaudeChange(tab: Tab, state: ClaudeState | null) {
+  tab.claude = state;
+  if (state === "waiting" || state === "done") {
+    if (!isVisible(tab)) tab.attention = state;
+    // Janela em segundo plano: pede atenção (pisca no lançador/barra de tarefas).
+    if (!windowFocused.value) {
+      const type = state === "waiting" ? UserAttentionType.Critical : UserAttentionType.Informational;
+      getCurrentWindow().requestUserAttention(type).catch(() => {});
+    }
+  } else {
+    tab.attention = null;
+  }
+}
+
+// Viu a aba: o aviso some.
+function clearVisibleAttention() {
+  const tab = activeTab.value;
+  if (tab && isVisible(tab)) tab.attention = null;
+}
+watch(() => store.activeId, clearVisibleAttention);
+const onWindowFocus = () => {
+  windowFocused.value = true;
+  clearVisibleAttention();
+  getCurrentWindow().requestUserAttention(null).catch(() => {});
+};
+const onWindowBlur = () => (windowFocused.value = false);
+
+// Hooks do Claude Code: confere quando a aba ativa roda o Claude e oferece instalar.
+const claudeHooks = ref<ClaudeHooksStatus | null>(null);
+const claudeHooksNote = ref<string | null>(null);
+watch(
+  () => [activeTab.value?.id, activeTab.value?.process] as const,
+  async ([id, process]) => {
+    const session = id !== undefined ? sessions.get(id) : undefined;
+    if (process !== "claude" || !session) return;
+    claudeHooks.value = await claudeHooksStatus(session.id).catch(() => null);
+  },
+);
+
+async function installClaudeHooks() {
+  const session = activeTab.value && sessions.get(activeTab.value.id);
+  if (!session) return;
+  try {
+    claudeHooks.value = await claudeHooksInstall(session.id);
+    claudeHooksNote.value = "Avisos ativados: valem pras próximas sessões do Claude (reinicie a atual com /exit).";
+  } catch (err) {
+    claudeHooksNote.value = `Não deu pra ativar os avisos: ${err}`;
+  }
+  setTimeout(() => (claudeHooksNote.value = null), 8000);
+}
 
 // ---- git / painel de diff ----
 const { status: git, refresh: refreshGit } = useGitStatus(computed(() => activeTab.value?.cwd ?? null));
@@ -218,9 +274,15 @@ function onKey(e: KeyboardEvent) {
   run(action);
 }
 
-onMounted(() => window.addEventListener("keydown", onKey, true));
+onMounted(() => {
+  window.addEventListener("keydown", onKey, true);
+  window.addEventListener("focus", onWindowFocus);
+  window.addEventListener("blur", onWindowBlur);
+});
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", onKey, true);
+  window.removeEventListener("focus", onWindowFocus);
+  window.removeEventListener("blur", onWindowBlur);
   clearInterval(pollTimer);
 });
 
@@ -310,10 +372,14 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
       :diff-open="diffOpen && !!git"
       :panel-open="!!activeTab?.panelOpen"
       :picker-open="pickerOpen"
+      :claude-hooks-missing="activeTab?.process === 'claude' && claudeHooks?.installed === false"
+      :claude-hooks-path="claudeHooks?.settingsPath ?? null"
+      :note="claudeHooksNote"
       @toggle-diff="diffOpen = !diffOpen"
       @toggle-panel="togglePanel"
       @pick-branch="pickerOpen = !pickerOpen"
       @github-login="githubLogin"
+      @install-claude-hooks="installClaudeHooks"
     />
 
     <BranchPicker

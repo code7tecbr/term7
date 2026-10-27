@@ -1,3 +1,4 @@
+mod claude;
 mod files;
 mod gh;
 mod git;
@@ -23,6 +24,8 @@ pub fn run() {
             gh::gh_pr,
             gh::gh_runs,
             gh::open_url,
+            claude::claude_hooks_status,
+            claude::claude_hooks_install,
             files::read_text_file,
             session::session_load,
             session::session_save,

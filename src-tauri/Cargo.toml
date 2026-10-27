@@ -15,3 +15,5 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 portable-pty = "0.9"
 serde = { version = "1", features = ["derive"] }
+# preserve_order: ao reescrever o settings.json do Claude, mantém a ordem das chaves.
+serde_json = { version = "1", features = ["preserve_order"] }
