@@ -3,6 +3,10 @@ import { computed, nextTick, ref } from "vue";
 import ContextMenu, { type MenuItem } from "./ContextMenu.vue";
 import {
   COLORS,
+  TAGS,
+  findTag,
+  setTabTag,
+  type TagId,
   activate,
   closeGroup,
   closeOtherTabs,
@@ -181,6 +185,7 @@ function tabMenu(e: MouseEvent, tab: Tab) {
     y: e.clientY,
     items: [
       { colors: COLORS, selected: tab.color, allowNone: true, pick: (c) => setTabColor(tab.id, c) },
+      { tags: TAGS, selected: tab.tag, pick: (t) => setTabTag(tab.id, t as TagId | null) },
       { label: "Renomear aba", action: () => startRename("tab", tab.id, tabTitle(tab, props.home)) },
       ...(tab.name ? [{ label: "Usar nome automático", action: () => renameTab(tab.id, null) }] : []),
       { separator: true },
@@ -309,7 +314,10 @@ function groupMenu(e: MouseEvent, group: Group) {
                 @click.stop
                 @dblclick.stop
               />
-              <span v-else class="title">{{ tabTitle(tab, props.home) }}</span>
+              <span v-else class="title-row">
+                <span class="title">{{ tabTitle(tab, props.home) }}</span>
+                <span v-if="findTag(tab.tag)" class="tag" :style="{ '--tag': findTag(tab.tag)!.color }">{{ findTag(tab.tag)!.label }}</span>
+              </span>
               <span v-if="tab.cwd" class="sub">{{ prettyPath(tab.cwd, props.home) }}</span>
             </div>
             <button class="close" title="Fechar (Ctrl+Shift+W)" @pointerdown.stop @click.stop="closeTab(tab.id)" @dblclick.stop>
@@ -538,6 +546,23 @@ section.group > .tab:first-of-type {
 }
 .title {
   font-weight: 500;
+}
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.tag {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--tag) 18%, transparent);
+  color: var(--tag);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  letter-spacing: 0.02em;
 }
 .sub {
   color: var(--fg-muted);
