@@ -2,22 +2,23 @@ name: Release
 
 on:
   push:
-    branches: [main]
+    # dev: só compila, pra manter o cache (Rust e apt) que os PRs pra dev podem ler.
+    branches: [main, dev]
   # Em PR só compila o .deb (sem versão, sem publicar): mostra se quebra antes do merge.
   pull_request:
 
 permissions:
   contents: write
 
-# Releases nunca rodam duas ao mesmo tempo; em PR, um push novo cancela o build anterior.
+# Releases nunca rodam duas ao mesmo tempo; nas outras branches, um push novo cancela o build anterior.
 concurrency:
-  group: ${{ github.event_name == 'push' && 'release' || format('pr-{0}', github.ref) }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.ref == 'refs/heads/main' && 'release' || format('build-{0}', github.ref) }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   # 1. Lê os commits (Conventional Commits), decide a versão e cria a tag + release.
   version:
-    if: github.event_name == 'push'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.semrel.outputs.version }}
@@ -38,8 +39,8 @@ jobs:
   # 2. Compila o .deb e anexa direto na release (sem upload de artifact do Actions).
   build-deb:
     needs: version
-    # Em PR o job version é pulado; !cancelled() deixa este rodar mesmo assim.
-    if: ${{ !cancelled() && (github.event_name == 'pull_request' || needs.version.outputs.version != '') }}
+    # Fora da main o job version é pulado; !cancelled() deixa este rodar mesmo assim.
+    if: ${{ !cancelled() && (github.ref != 'refs/heads/main' || needs.version.outputs.version != '') }}
     # O .deb fica ligado à glibc e ao WebKit desta versão: roda no 24.04 e mais novos.
     # Não subir sem necessidade, senão deixa de instalar em quem está no 24.04.
     runs-on: ubuntu-24.04
@@ -104,7 +105,7 @@ jobs:
   # 3. Mantém só a release atual + 2 anteriores. As mais velhas (e suas tags) são apagadas.
   cleanup:
     needs: build-deb
-    if: github.event_name == 'push'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
