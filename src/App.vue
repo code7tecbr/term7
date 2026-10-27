@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { homeDir } from "@tauri-apps/api/path";
 import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
 import TerminalView from "./components/TerminalView.vue";
@@ -8,12 +8,21 @@ import StatusBar from "./components/StatusBar.vue";
 import FileExplorer from "./components/FileExplorer.vue";
 import EditorTabs from "./components/EditorTabs.vue";
 import BranchPicker from "./components/BranchPicker.vue";
+import McpMenu from "./components/McpMenu.vue";
 import { openFile, shownFile } from "./state/editor";
 import type { PathTarget } from "./lib/paths";
 
 // O visualizador (CodeMirror) é pesado: só carrega quando abrir o primeiro arquivo.
 const FileView = defineAsyncComponent(() => import("./components/FileView.vue"));
-import { claudeHooksInstall, claudeHooksStatus, type ClaudeHooksStatus, type ClaudeState, type PtySession } from "./lib/pty";
+import {
+  claudeHooksInstall,
+  claudeHooksStatus,
+  claudeMcpList,
+  type ClaudeHooksStatus,
+  type ClaudeState,
+  type McpServer,
+  type PtySession,
+} from "./lib/pty";
 import { matchShortcut, type Action } from "./lib/shortcuts";
 import { useGitStatus } from "./lib/useGitStatus";
 import { useGithub } from "./lib/useGithub";
@@ -147,7 +156,57 @@ watch(
     const session = id !== undefined ? sessions.get(id) : undefined;
     if (process !== "claude" || !session) return;
     claudeHooks.value = await claudeHooksStatus(session.id).catch(() => null);
+    // Primeira vez (ou dado velho) com o Claude nesta aba: verifica os MCPs em segundo plano.
+    if (id !== undefined) refreshMcp(id, MCP_STALE_MS);
   },
+);
+
+// ---- servidores MCP do Claude da aba (claude mcp list) ----
+interface McpState {
+  servers: McpServer[] | null;
+  loading: boolean;
+  error: string | null;
+  at: number | null;
+}
+// O comando conecta em cada servidor (alguns segundos): resultado guardado por aba.
+const MCP_STALE_MS = 5 * 60_000;
+const mcpByTab = reactive(new Map<number, McpState>());
+const mcpOpen = ref(false);
+const activeMcp = computed(() => (activeTab.value ? mcpByTab.get(activeTab.value.id) ?? null : null));
+
+async function refreshMcp(tabId: number, maxAge = 0) {
+  const session = sessions.get(tabId);
+  const current = mcpByTab.get(tabId);
+  if (!session || current?.loading) return;
+  if (current?.at && Date.now() - current.at < maxAge) return;
+  mcpByTab.set(tabId, { servers: current?.servers ?? null, loading: true, error: null, at: current?.at ?? null });
+  try {
+    const servers = await claudeMcpList(session.id);
+    mcpByTab.set(tabId, { servers, loading: false, error: null, at: Date.now() });
+  } catch (err) {
+    mcpByTab.set(tabId, { servers: current?.servers ?? null, loading: false, error: String(err), at: current?.at ?? null });
+  }
+}
+
+function toggleMcp() {
+  mcpOpen.value = !mcpOpen.value;
+  if (mcpOpen.value && activeTab.value) refreshMcp(activeTab.value.id, 60_000);
+}
+
+/** Login de MCP é no próprio Claude: digita /mcp no prompt (o Enter fica com o usuário). */
+function authenticateMcp() {
+  const session = activeTab.value && sessions.get(activeTab.value.id);
+  session?.write("/mcp").catch(() => {});
+  mcpOpen.value = false;
+  if (activeTab.value) {
+    activeTab.value.view = -1;
+    activeTab.value.focusedPane = "main";
+  }
+}
+// Fechou o Claude ou trocou de aba: o menu não faz mais sentido.
+watch(
+  () => [activeTab.value?.id, activeTab.value?.process],
+  () => activeTab.value?.process !== "claude" && (mcpOpen.value = false),
 );
 
 async function installClaudeHooks() {
@@ -392,11 +451,27 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
       :claude-hooks-missing="activeTab?.process === 'claude' && claudeHooks?.installed === false"
       :claude-hooks-path="claudeHooks?.settingsPath ?? null"
       :note="claudeHooksNote"
+      :mcp="activeTab?.process === 'claude' ? activeMcp : null"
+      :mcp-available="activeTab?.process === 'claude'"
+      :mcp-open="mcpOpen"
       @toggle-diff="diffOpen = !diffOpen"
       @toggle-panel="togglePanel"
       @pick-branch="pickerOpen = !pickerOpen"
       @github-login="githubLogin"
       @install-claude-hooks="installClaudeHooks"
+      @toggle-mcp="toggleMcp"
+    />
+
+    <McpMenu
+      v-if="mcpOpen && activeTab"
+      :servers="activeMcp?.servers ?? null"
+      :loading="!!activeMcp?.loading"
+      :error="activeMcp?.error ?? null"
+      :config-dir="claudeHooks?.settingsPath.replace(/\/settings\.json$/, '').replace(home ?? '\0', '~') ?? null"
+      :checked-at="activeMcp?.at ?? null"
+      @close="mcpOpen = false"
+      @refresh="activeTab && refreshMcp(activeTab.id)"
+      @authenticate="authenticateMcp"
     />
 
     <BranchPicker

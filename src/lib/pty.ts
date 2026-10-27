@@ -23,6 +23,17 @@ export interface ClaudeHooksStatus {
 }
 
 export const claudeHooksStatus = (id: number) => invoke<ClaudeHooksStatus>("claude_hooks_status", { id });
+export interface McpServer {
+  name: string;
+  /** Endereço/comando sem query nem argumentos (podem ter token). */
+  target: string;
+  status: "connected" | "needs_auth" | "failed" | "unknown";
+  detail: string | null;
+}
+
+/** `claude mcp list` do Claude da aba (mesmo binário, ambiente e pasta). Leva alguns segundos. */
+export const claudeMcpList = (id: number) => invoke<McpServer[]>("claude_mcp_list", { id });
+
 export const claudeHooksInstall = (id: number) => invoke<ClaudeHooksStatus>("claude_hooks_install", { id });
 
 export interface PtySession {

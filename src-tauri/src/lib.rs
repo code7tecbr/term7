@@ -26,6 +26,7 @@ pub fn run() {
             gh::open_url,
             claude::claude_hooks_status,
             claude::claude_hooks_install,
+            claude::claude_mcp_list,
             files::read_text_file,
             files::resolve_paths,
             session::session_load,
