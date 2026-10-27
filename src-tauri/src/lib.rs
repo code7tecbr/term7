@@ -27,6 +27,7 @@ pub fn run() {
             claude::claude_hooks_status,
             claude::claude_hooks_install,
             files::read_text_file,
+            files::resolve_paths,
             session::session_load,
             session::session_save,
         ])

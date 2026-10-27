@@ -8,7 +8,8 @@ import StatusBar from "./components/StatusBar.vue";
 import FileExplorer from "./components/FileExplorer.vue";
 import EditorTabs from "./components/EditorTabs.vue";
 import BranchPicker from "./components/BranchPicker.vue";
-import { shownFile } from "./state/editor";
+import { openFile, shownFile } from "./state/editor";
+import type { PathTarget } from "./lib/paths";
 
 // O visualizador (CodeMirror) é pesado: só carrega quando abrir o primeiro arquivo.
 const FileView = defineAsyncComponent(() => import("./components/FileView.vue"));
@@ -91,6 +92,20 @@ async function pollSessions() {
   }
 }
 const pollTimer = setInterval(pollSessions, 1000);
+
+// ---- caminhos clicados no terminal: abrem numa aba da área principal ----
+function openPath(tab: Tab, { path, line }: PathTarget) {
+  // Dentro do repositório atual: abre relativo à raiz, com o status do git (alterações).
+  const root = git.value?.root;
+  const inRepo = root && path.startsWith(root + "/");
+  const cut = path.lastIndexOf("/");
+  openFile(
+    inRepo
+      ? { root, path: path.slice(root.length + 1), origPath: null, line }
+      : { root: path.slice(0, cut) || "/", path: path.slice(cut + 1), origPath: null, line },
+    tab,
+  );
+}
 
 // ---- avisos do Claude ----
 const windowFocused = ref(document.hasFocus());
@@ -307,6 +322,7 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
                   :focused="isActive(tab) && tab.focusedPane === 'main' && tab.view === -1"
                   @focus="tab.focusedPane = 'main'"
                   @spawned="sessions.set(tab.id, $event)"
+                  @open-path="openPath(tab, $event)"
                   @exit="onExit(tab.id)"
                 />
               </div>
@@ -343,6 +359,7 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
                   :focused="isActive(tab) && tab.panelOpen && tab.focusedPane === 'panel'"
                   @focus="tab.focusedPane = 'panel'"
                   @spawned="onPanelSpawned(tab.id, $event)"
+                  @open-path="openPath(tab, $event)"
                   @exit="panelSessions.delete(tab.id), closePanel(tab.id)"
                 />
               </div>

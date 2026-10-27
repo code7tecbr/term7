@@ -5,12 +5,18 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { spawnPty, type PtySession } from "../lib/pty";
 import { attachLinks } from "../lib/links";
+import { attachPathLinks, type PathTarget } from "../lib/paths";
 import { matchShortcut } from "../lib/shortcuts";
 import { isTextKey, routeTextInput } from "../lib/textInput";
 import { term7Dark } from "../lib/theme";
 
 const props = defineProps<{ cwd: string | null; focused: boolean }>();
-const emit = defineEmits<{ spawned: [session: PtySession]; exit: [code: number]; focus: [] }>();
+const emit = defineEmits<{
+  spawned: [session: PtySession];
+  exit: [code: number];
+  focus: [];
+  openPath: [target: PathTarget];
+}>();
 
 const FONT_SIZE = 14;
 
@@ -115,6 +121,8 @@ onMounted(async () => {
   t.open(container.value!);
   loadWebgl(t);
   attachLinks(t);
+  // Caminho relativo é resolvido na pasta atual do shell da aba.
+  attachPathLinks(t, async () => (await session?.info())?.cwd ?? null, (target) => emit("openPath", target));
   fit.fit();
 
   // Atalhos do app não chegam no shell. Texto (incluindo acentos) não vai pelo
