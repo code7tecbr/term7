@@ -225,3 +225,155 @@ mod tests {
         );
     }
 }
+
+// ---- servidores MCP do Claude da aba ----
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServer {
+    name: String,
+    /// Endereço ou comando, sem query string nem argumentos (podem ter token).
+    target: String,
+    /// connected | needs_auth | failed | unknown
+    status: &'static str,
+    /// Motivo da falha, quando houver.
+    detail: Option<String>,
+}
+
+/// Endereço sem credenciais: URL fica só com host e caminho; comando, só com o
+/// executável e o primeiro argumento (ex.: `npx -y`, sem `--api-key ...`).
+fn safe_target(target: &str) -> String {
+    let target = target.trim();
+    let (main, transport) = match target.rsplit_once(" (") {
+        Some((m, t)) if t.ends_with(')') => (m, format!(" ({t}")),
+        _ => (target, String::new()),
+    };
+    if let Some((scheme, rest)) = main.split_once("://") {
+        let rest = rest.split(['?', '#']).next().unwrap_or("");
+        let rest = rest.rsplit_once('@').map_or(rest, |(_, r)| r);
+        format!("{scheme}://{rest}{transport}")
+    } else {
+        main.split_whitespace().take(2).collect::<Vec<_>>().join(" ")
+    }
+}
+
+fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            // CSI: ESC [ ... letra final
+            for c in chars.by_ref() {
+                if c.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Lê a saída do `claude mcp list`: "nome: endereço - ✔ Connected".
+fn parse_mcp_list(output: &str) -> Vec<McpServer> {
+    strip_ansi(output)
+        .lines()
+        .filter_map(|line| {
+            let (name, rest) = line.split_once(": ")?;
+            let (target, status) = rest.rsplit_once(" - ")?;
+            let lower = status.to_lowercase();
+            let (status, detail) = if lower.contains("needs auth") || lower.contains("authenticat") {
+                ("needs_auth", None)
+            } else if lower.contains("connected") && !lower.contains("fail") {
+                ("connected", None)
+            } else if lower.contains("fail") || status.starts_with(['✘', '✗', '×']) {
+                let detail = status.split_once('—').map(|(_, d)| d.trim().to_string());
+                ("failed", detail)
+            } else {
+                ("unknown", Some(status.trim().to_string()))
+            };
+            Some(McpServer { name: name.trim().to_string(), target: safe_target(target), status, detail })
+        })
+        .collect()
+}
+
+/// Roda `claude mcp list` como o Claude da aba roda: mesmo binário, ambiente e
+/// pasta (pega o CLAUDE_CONFIG_DIR e os MCPs do projeto certos).
+fn mcp_list(foreground: u32) -> Result<Vec<McpServer>, String> {
+    let comm = std::fs::read_to_string(format!("/proc/{foreground}/comm")).unwrap_or_default();
+    if comm.trim() != "claude" {
+        return Err("o Claude não está rodando nesta aba".into());
+    }
+    let exe = std::fs::read_link(format!("/proc/{foreground}/exe")).map_err(|e| e.to_string())?;
+    let cwd = std::fs::read_link(format!("/proc/{foreground}/cwd")).map_err(|e| e.to_string())?;
+    let environ = std::fs::read(format!("/proc/{foreground}/environ")).map_err(|e| e.to_string())?;
+    let env = environ.split(|&b| b == 0).filter_map(|var| {
+        let var = std::str::from_utf8(var).ok()?;
+        let (k, v) = var.split_once('=')?;
+        // Sem o TERM7_PANE: um SessionEnd desse comando apagaria o estado da aba.
+        (k != MARKER).then(|| (k.to_string(), v.to_string()))
+    });
+
+    let mut child = std::process::Command::new(exe)
+        .args(["mcp", "list"])
+        .current_dir(cwd)
+        .env_clear()
+        .envs(env)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+
+    // A checagem conecta em cada servidor; um travado não pode segurar pra sempre.
+    let deadline = std::time::Instant::now() + Duration::from_secs(45);
+    loop {
+        match child.try_wait().map_err(|e| e.to_string())? {
+            Some(_) => break,
+            None if std::time::Instant::now() > deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err("o claude mcp list demorou demais".into());
+            }
+            None => std::thread::sleep(Duration::from_millis(100)),
+        }
+    }
+    let mut out = String::new();
+    use std::io::Read;
+    child.stdout.take().ok_or("sem saída")?.read_to_string(&mut out).map_err(|e| e.to_string())?;
+    Ok(parse_mcp_list(&out))
+}
+
+#[tauri::command]
+pub async fn claude_mcp_list(state: State<'_, PtyState>, id: u32) -> Result<Vec<McpServer>, String> {
+    let fg = crate::pty::foreground_pid(&state, id).ok_or("aba não encontrada")?;
+    tauri::async_runtime::spawn_blocking(move || mcp_list(fg))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[cfg(test)]
+mod mcp_tests {
+    use super::*;
+
+    #[test]
+    fn le_a_saida_do_mcp_list() {
+        let out = "Checking MCP server health…\n\n\
+            context7: https://mcp.context7.com/mcp (HTTP) - ✔ Connected\n\
+            paper: http://127.0.0.1:29979/mcp (HTTP) - ✘ Failed to connect — ECONNREFUSED\n\
+            penpot: https://design.penpot.app/mcp/stream?userToken=SEGREDO (HTTP) - ✔ Connected\n\
+            claude.ai Gmail: https://gmailmcp.googleapis.com/mcp/v1 - ! Needs authentication\n\
+            ctx: npx -y @upstash/context7-mcp --api-key SEGREDO - ✔ Connected\n";
+        let s = parse_mcp_list(out);
+        assert_eq!(s.len(), 5);
+        assert_eq!(s[0].status, "connected");
+        assert_eq!(s[1].status, "failed");
+        assert_eq!(s[1].detail.as_deref(), Some("ECONNREFUSED"));
+        assert_eq!(s[2].target, "https://design.penpot.app/mcp/stream (HTTP)");
+        assert_eq!(s[3].name, "claude.ai Gmail");
+        assert_eq!(s[3].status, "needs_auth");
+        assert_eq!(s[4].target, "npx -y");
+        assert!(s.iter().all(|x| !x.target.contains("SEGREDO")));
+    }
+}
