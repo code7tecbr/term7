@@ -1,0 +1,30 @@
+:root {
+  --bg: #0f1117;
+  --bg-elevated: #161922;
+  --border: #232734;
+  --fg: #d8dee9;
+  --fg-muted: #7a8194;
+  --accent: #7aa2f7;
+  --hover: rgb(255 255 255 / 0.06);
+  --active: rgb(255 255 255 / 0.1);
+  --claude: #d97757;
+  --green: #9ece6a;
+  --red: #f7768e;
+  --yellow: #e0af68;
+  --add-bg: rgb(158 206 106 / 0.12);
+  --del-bg: rgb(247 118 142 / 0.12);
+  --hunk-bg: rgb(122 162 247 / 0.08);
+  /* Nerd Fonts primeiro: temas do oh-my-zsh/powerlevel10k usam os ícones delas. */
+  --font-mono: "MesloLGS NF", "JetBrainsMono Nerd Font", "FiraCode Nerd Font", "JetBrains Mono", "Fira Code", "Cascadia Code", "Ubuntu Mono", monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #app {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, sans-serif;
+}

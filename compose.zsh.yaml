@@ -1,0 +1,11 @@
+# Opcional: usa o seu zsh + oh-my-zsh + fontes do host dentro do container.
+#   docker compose -f compose.yaml -f compose.zsh.yaml run --rm dev
+services:
+  dev:
+    environment:
+      SHELL: /usr/bin/zsh
+    volumes:
+      - ${HOME}/.oh-my-zsh:/home/dev/.oh-my-zsh:ro
+      - ${HOME}/.zshrc:/home/dev/.zshrc:ro
+      - ${HOME}/.p10k.zsh:/home/dev/.p10k.zsh:ro
+      - ${HOME}/.local/share/fonts:/home/dev/.local/share/fonts:ro
