@@ -39,6 +39,7 @@
     ],
     "linux": {
       "deb": {
+        "depends": ["git", "gh"],
         "desktopTemplate": "./term7.desktop"
       }
     }

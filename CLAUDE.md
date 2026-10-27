@@ -27,10 +27,12 @@ src/
   state/viewer.ts         arquivos abertos no visualizador
   lib/pty.ts              ponte com o backend (invoke + Channel de bytes brutos)
   lib/git.ts              tipos e chamadas de git; parseDiff
+  lib/github.ts           PR, checks e runs (via gh); useGithub.ts faz o polling
   lib/shortcuts.ts        atalhos globais (o terminal ignora essas teclas)
 src-tauri/src/
   pty.rs                  sessões de shell (spawn/write/resize/kill/info via /proc)
-  git.rs                  status, diff, branches, checkout, fetch (usa o binário `git`)
+  git.rs                  status, diff, branches, checkout, fetch, info do repo (usa o binário `git`)
+  gh.rs                   PR e runs via `gh`; open_url (xdg-open, só https)
   files.rs                leitura de arquivo pro visualizador
   session.rs              session.json em ~/.local/share/br.tec.code7.term7/
 ```
@@ -41,6 +43,7 @@ src-tauri/src/
 - **Comentários** explicam o *porquê*, curtos. Nada de comentário que repete o código.
 - **Comandos Tauri** que fazem I/O ou chamam processos (git, arquivos) são `async` + `spawn_blocking`: comando síncrono roda na thread da janela e trava a interface.
 - **Saída do PTY** vai como bytes brutos (`InvokeResponseBody::Raw`), nunca JSON.
+- **`gh`** precisa funcionar com a versão 2.4 (Ubuntu 22.04): sem `run list --branch` nem `workflowName`. Consultas ao GitHub são espaçadas (60 s, 15 s com action rodando).
 - **Git em polling** usa `GIT_OPTIONAL_LOCKS=0` pra não disputar o `index.lock` com o usuário.
 - **Botões** que não devem roubar o foco do terminal usam `@mousedown.prevent`.
 - Novos comandos Tauri: registrar em `src-tauri/src/lib.rs`; permissões de janela em `src-tauri/capabilities/default.json`.

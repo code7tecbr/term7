@@ -6,6 +6,18 @@ e manda a saída em bytes brutos pro frontend, que renderiza com WebGL.
 
 ## Pré-requisitos (Linux)
 
+Pra usar, o term7 precisa do `git` e do [`gh`](https://cli.github.com/) (GitHub CLI): o `git`
+alimenta o painel de alterações e as branches; o `gh` mostra o PR da branch e o estado das actions.
+O `.deb` já declara os dois como dependência, então o `apt` instala junto. Depois, uma vez só:
+
+```sh
+gh auth login
+```
+
+O `gh` dos repositórios do Ubuntu 22.04 (2.4) funciona; o do [repositório oficial](https://github.com/cli/cli/blob/trunk/docs/install_linux.md) também.
+
+Pra desenvolver:
+
 ```sh
 # Rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -70,6 +82,7 @@ A cada push na `main`, o workflow `.github/workflows/release.yml` cria a release
 - [x] Terminal inferior por aba (`Ctrl+'`)
 - [x] Painel de diff do git (`Ctrl+Shift+G`) e visualizador de arquivo
 - [x] Troca de branch pela barra de status
+- [x] PR da branch e estado das actions na barra de status (indica worktree)
 
 O que falta está nas [issues](https://github.com/code7tecbr/term7/issues):
 

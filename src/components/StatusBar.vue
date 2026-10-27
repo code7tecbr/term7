@@ -1,17 +1,78 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { repoName, type GitStatus } from "../lib/git";
+import { openUrl, overall, type Check, type CheckState, type GithubStatus, type RepoInfo } from "../lib/github";
 import { prettyPath } from "../state/tabs";
 
 const props = defineProps<{
   cwd: string | null;
   home: string | null;
   git: GitStatus | null;
+  repo: RepoInfo | null;
+  github: GithubStatus | null;
   diffOpen: boolean;
   panelOpen: boolean;
   pickerOpen: boolean;
 }>();
-defineEmits<{ toggleDiff: []; togglePanel: []; pickBranch: [] }>();
+defineEmits<{ toggleDiff: []; togglePanel: []; pickBranch: []; githubLogin: [] }>();
+
+const open = (url: string) => openUrl(url).catch(() => {});
+
+// Branch no link: cada parte codificada, mas as barras ficam (ex.: feat/x).
+const branchPath = (b: string) => b.split("/").map(encodeURIComponent).join("/");
+
+const branchUrl = computed(() => {
+  const web = props.repo?.webUrl;
+  const branch = props.git?.branch;
+  return web && branch ? `${web}/tree/${branchPath(branch)}` : web ?? null;
+});
+
+/** Branch publicada, sem PR e que não é a padrão: dá pra abrir um PR. */
+const createPrUrl = computed(() => {
+  const web = props.repo?.webUrl;
+  const branch = props.git?.branch;
+  if (!web || !branch || !props.git?.upstream) return null;
+  if (props.github?.kind === "pr" || props.github?.kind === "missing" || props.github?.kind === "unauthenticated") return null;
+  if (branch === (props.repo?.defaultBranch ?? "main")) return null;
+  return `${web}/compare/${branchPath(branch)}?expand=1`;
+});
+
+const pr = computed(() => (props.github?.kind === "pr" ? props.github.pr : null));
+const runs = computed(() => (props.github?.kind === "runs" ? props.github.runs : []));
+
+/** Checks do PR ou runs da branch, no mesmo formato. */
+const checks = computed<Check[]>(() => pr.value?.checks ?? runs.value.map((r) => ({ name: r.name, state: r.state, url: r.url })));
+const checksState = computed(() => overall(checks.value.map((c) => c.state)));
+
+const STATE_LABEL: Record<CheckState, string> = {
+  pending: "rodando",
+  success: "passou",
+  failure: "falhou",
+  neutral: "ignorado",
+};
+const STATE_ICON: Record<CheckState, string> = { pending: "●", success: "✓", failure: "✗", neutral: "–" };
+
+const checksTitle = computed(() =>
+  checks.value.map((c) => `${STATE_ICON[c.state]} ${c.name} — ${STATE_LABEL[c.state]}`).join("\n"),
+);
+
+/** Com falha, vai direto pro log do que falhou; senão, pra lista de checks. */
+function openChecks() {
+  const failed = checks.value.find((c) => c.state === "failure" && c.url);
+  if (failed?.url) return open(failed.url);
+  if (pr.value) return open(`${pr.value.url}/checks`);
+  const first = checks.value.find((c) => c.url);
+  if (first?.url) open(first.url);
+}
+
+const prState = computed(() => {
+  const p = pr.value;
+  if (!p) return null;
+  if (p.state === "MERGED") return { cls: "merged", label: "mergeado" };
+  if (p.state === "CLOSED") return { cls: "closed", label: "fechado" };
+  if (p.isDraft) return { cls: "draft", label: "rascunho" };
+  return { cls: "opened", label: "aberto" };
+});
 
 const totals = computed(() => {
   const files = props.git?.files ?? [];
@@ -44,12 +105,35 @@ const totals = computed(() => {
           @click="$emit('pickBranch')"
         >
           <svg viewBox="0 0 16 16" width="13" height="13"><circle cx="5" cy="3.5" r="1.5" fill="none" stroke="currentColor" stroke-width="1.2" /><circle cx="5" cy="12.5" r="1.5" fill="none" stroke="currentColor" stroke-width="1.2" /><circle cx="11" cy="6" r="1.5" fill="none" stroke="currentColor" stroke-width="1.2" /><path d="M5 5v6M11 7.5c0 2-2 2.5-5 3.5" fill="none" stroke="currentColor" stroke-width="1.2" /></svg>
-          <span class="repo">{{ repoName(git.root) }}</span>
+          <span class="repo">{{ repoName(repo?.mainRoot ?? git.root) }}</span>
+          <span v-if="repo?.isWorktree" class="tag" :title="`Worktree de ${repo.mainRoot ?? ''}`">worktree</span>
           <span class="slash">/</span>
           <span class="branch">{{ git.branch ?? "HEAD" }}</span>
           <span v-if="git.ahead" class="sync">↑{{ git.ahead }}</span>
           <span v-if="git.behind" class="sync">↓{{ git.behind }}</span>
           <svg viewBox="0 0 16 16" width="10" height="10"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        </button>
+
+        <template v-if="pr && prState">
+          <button class="btn pr" :class="prState.cls" :title="`#${pr.number} ${pr.title}\n${prState.label} — abrir no navegador`" @click="open(pr.url)">
+            <svg viewBox="0 0 16 16" width="13" height="13"><circle cx="4.5" cy="3.5" r="1.5" fill="none" stroke="currentColor" stroke-width="1.2" /><circle cx="4.5" cy="12.5" r="1.5" fill="none" stroke="currentColor" stroke-width="1.2" /><circle cx="11.5" cy="12.5" r="1.5" fill="none" stroke="currentColor" stroke-width="1.2" /><path d="M4.5 5v6M11.5 11V6.5A1.5 1.5 0 0 0 10 5H7.5m0 0L9 3.5M7.5 5 9 6.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+            #{{ pr.number }}
+          </button>
+        </template>
+
+        <button v-if="checksState" class="btn checks" :class="checksState" :title="`${checksTitle}\n\nAbrir no navegador`" @click="openChecks">
+          <span class="dot" />
+          <span>{{ pr ? "checks" : checks.length === 1 ? checks[0].name : "actions" }}</span>
+        </button>
+
+        <button v-if="createPrUrl" class="btn" title="Abrir um pull request desta branch no navegador" @click="open(createPrUrl)">Criar PR</button>
+
+        <button v-if="github?.kind === 'unauthenticated'" class="btn login" title="O gh não está logado: abre o terminal inferior com gh auth login" @click="$emit('githubLogin')">
+          Entrar no GitHub
+        </button>
+
+        <button v-if="branchUrl && !pr" class="btn icon" :title="`Abrir ${git.branch ?? 'repositório'} no navegador`" @click="open(branchUrl)">
+          <svg viewBox="0 0 16 16" width="13" height="13"><path d="M9 3h4v4M13 3 7.5 8.5M12 9.5V12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h2.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
         </button>
 
         <button class="btn" :class="{ open: diffOpen }" title="Mostrar alterações (Ctrl+Shift+G)" @click="$emit('toggleDiff')">
@@ -131,5 +215,58 @@ const totals = computed(() => {
 .clean,
 .sync {
   opacity: 0.8;
+}
+.tag {
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 10.5px;
+  line-height: 14px;
+  color: var(--accent);
+}
+.btn.icon {
+  padding: 0 5px;
+}
+.pr.opened {
+  color: var(--green);
+}
+.pr.merged {
+  color: var(--purple);
+}
+.pr.closed {
+  color: var(--red);
+}
+.pr.draft {
+  color: var(--fg-muted);
+}
+.login {
+  color: var(--accent);
+}
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.checks.success .dot {
+  color: var(--green);
+}
+.checks.failure .dot {
+  color: var(--red);
+}
+.checks.neutral .dot {
+  color: var(--fg-muted);
+}
+.checks.pending .dot {
+  color: var(--yellow);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.checks.failure {
+  color: var(--red);
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.3;
+  }
 }
 </style>
