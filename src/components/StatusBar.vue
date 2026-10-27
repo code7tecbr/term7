@@ -52,7 +52,7 @@ const totals = computed(() => {
           <svg viewBox="0 0 16 16" width="10" height="10"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
         </button>
 
-        <button class="btn" :class="{ open: diffOpen }" title="Mostrar alterações (Ctrl+Shift+G)" @click="$emit('toggleDiff')">
+        <button class="btn" :class="{ open: diffOpen }" title="Explorador de arquivos (Ctrl+Shift+G)" @click="$emit('toggleDiff')">
           <template v-if="totals.count">
             <span>{{ totals.count }} {{ totals.count === 1 ? "arquivo" : "arquivos" }}</span>
             <span class="add">+{{ totals.additions }}</span>

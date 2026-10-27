@@ -9,6 +9,18 @@ export interface Group {
   collapsed: boolean;
 }
 
+export type FileMode = "file" | "changes";
+
+/** Arquivo aberto numa aba da área principal. */
+export interface OpenFile {
+  root: string;
+  /** Caminho relativo à raiz do repositório. */
+  path: string;
+  /** Nome antigo, quando o arquivo foi renomeado (pra comparar com o HEAD). */
+  origPath: string | null;
+  mode: FileMode;
+}
+
 export interface Tab {
   id: number;
   /** Pasta onde o shell nasce. */
@@ -21,6 +33,10 @@ export interface Tab {
   /** Nome dado pelo usuário. null = título automático (pasta/processo). */
   name: string | null;
   color: string | null;
+  /** Arquivos abertos em abas ao lado do terminal. */
+  files: OpenFile[];
+  /** O que a área principal mostra: -1 = terminal, senão o índice em files. */
+  view: number;
   /** Terminal inferior (como no VS Code). */
   panelAlive: boolean;
   panelOpen: boolean;
@@ -31,7 +47,7 @@ export interface Tab {
 }
 
 export type SavedTab = Pick<Tab, "cwd" | "groupId"> &
-  Partial<Pick<Tab, "name" | "color" | "panelOpen" | "panelHeight">>;
+  Partial<Pick<Tab, "name" | "color" | "panelOpen" | "panelHeight" | "files" | "view">>;
 
 function makeTab(fields: Partial<Tab>): Tab {
   return {
@@ -42,6 +58,8 @@ function makeTab(fields: Partial<Tab>): Tab {
     groupId: null,
     name: null,
     color: null,
+    files: [],
+    view: -1,
     panelAlive: false,
     panelOpen: false,
     panelHeight: 0.35,
@@ -160,6 +178,8 @@ export function restoreLayout(
         groupId: t.groupId === null ? null : (groupIds.get(t.groupId) ?? null),
         name: t.name ?? null,
         color: t.color ?? null,
+        files: (t.files ?? []).map((f) => ({ ...f, mode: f.mode === "changes" ? "changes" : "file" })),
+        view: t.view !== undefined && t.view < (t.files?.length ?? 0) ? t.view : -1,
         panelAlive: !!t.panelOpen,
         panelOpen: !!t.panelOpen,
         panelHeight: t.panelHeight ?? 0.35,

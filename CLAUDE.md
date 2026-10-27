@@ -20,17 +20,17 @@ docker compose run --rm --no-deps dev bash -c "cd src-tauri && cargo check"   # 
 
 ```
 src/
-  App.vue                 layout: sidebar | terminais (+ terminal inferior) | visualizador | diff
-  components/             TabSidebar, TerminalView, DiffPanel, FileViewer (lazy), BranchPicker, StatusBar, ContextMenu
+  App.vue                 layout: sidebar | área principal (abas: terminal + arquivos; terminal inferior) | explorador
+  components/             TabSidebar, TerminalView, EditorTabs, FileView (lazy), FileExplorer, BranchPicker, StatusBar, ContextMenu
   state/tabs.ts           abas e grupos (store reativo); regra: abas de um grupo são sempre contíguas
   state/session.ts        salva/restaura o layout
-  state/viewer.ts         arquivos abertos no visualizador
+  state/editor.ts         arquivos abertos na área principal (cada aba lateral tem os seus)
   lib/pty.ts              ponte com o backend (invoke + Channel de bytes brutos)
-  lib/git.ts              tipos e chamadas de git; parseDiff
+  lib/git.ts              tipos e chamadas de git
   lib/shortcuts.ts        atalhos globais (o terminal ignora essas teclas)
 src-tauri/src/
   pty.rs                  sessões de shell (spawn/write/resize/kill/info via /proc)
-  git.rs                  status, diff, branches, checkout, fetch (usa o binário `git`)
+  git.rs                  status, ls-files, branches, checkout, fetch (usa o binário `git`)
   files.rs                leitura de arquivo pro visualizador
   session.rs              session.json em ~/.local/share/br.tec.code7.term7/
 ```

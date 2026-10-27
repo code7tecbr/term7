@@ -68,7 +68,8 @@ A cada push na `main`, o workflow `.github/workflows/release.yml` cria a release
 - [x] Grupos de abas (nome, cor, recolher) e arrastar/soltar
 - [x] Sessão restaurada ao reabrir (abas, grupos, pastas)
 - [x] Terminal inferior por aba (`Ctrl+'`)
-- [x] Painel de diff do git (`Ctrl+Shift+G`) e visualizador de arquivo
+- [x] Explorador de arquivos com o status do git (`Ctrl+Shift+G`)
+- [x] Arquivos em abas na área principal, com toggle entre arquivo e alterações
 - [x] Troca de branch pela barra de status
 
 O que falta está nas [issues](https://github.com/code7tecbr/term7/issues):

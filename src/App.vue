@@ -5,12 +5,13 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import TerminalView from "./components/TerminalView.vue";
 import TabSidebar from "./components/TabSidebar.vue";
 import StatusBar from "./components/StatusBar.vue";
-import DiffPanel from "./components/DiffPanel.vue";
+import FileExplorer from "./components/FileExplorer.vue";
+import EditorTabs from "./components/EditorTabs.vue";
 import BranchPicker from "./components/BranchPicker.vue";
-import { viewer } from "./state/viewer";
+import { shownFile } from "./state/editor";
 
 // O visualizador (CodeMirror) é pesado: só carrega quando abrir o primeiro arquivo.
-const FileViewer = defineAsyncComponent(() => import("./components/FileViewer.vue"));
+const FileView = defineAsyncComponent(() => import("./components/FileView.vue"));
 import type { PtySession } from "./lib/pty";
 import { matchShortcut, type Action } from "./lib/shortcuts";
 import { useGitStatus } from "./lib/useGitStatus";
@@ -112,7 +113,6 @@ function writeNumber(key: string, value: number) {
 
 const sidebarWidth = ref(readNumber("term7.sidebarWidth", 230));
 const diffWidth = ref(readNumber("term7.diffWidth", 460));
-const viewerWidth = ref(readNumber("term7.viewerWidth", 560));
 const clamp = (v: number, min: number, max: number) => Math.round(Math.min(Math.max(v, min), max));
 
 /** Arrasto genérico: chama onMove com a posição do ponteiro e onEnd ao soltar. */
@@ -143,16 +143,6 @@ const resizeDiff = (e: PointerEvent) =>
     (ev) => (diffWidth.value = clamp(window.innerWidth - ev.clientX, 280, window.innerWidth * 0.7)),
     () => writeNumber("term7.diffWidth", diffWidth.value),
   );
-
-// O visualizador fica entre o terminal e o painel de diff.
-function resizeViewer(e: PointerEvent) {
-  const right = (diffOpen.value && git.value ? diffWidth.value : 0) + 4;
-  drag(
-    e,
-    (ev) => (viewerWidth.value = clamp(window.innerWidth - right - ev.clientX, 320, window.innerWidth * 0.7)),
-    () => writeNumber("term7.viewerWidth", viewerWidth.value),
-  );
-}
 
 function resizePanel(e: PointerEvent, tab: Tab) {
   const slot = (e.currentTarget as HTMLElement).parentElement!.getBoundingClientRect();
@@ -208,14 +198,29 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
       <div class="terminals">
         <!-- Abas inativas ficam escondidas (não desmontadas) pra manter o shell e o scrollback. -->
         <div v-for="tab in store.tabs" :key="tab.id" class="slot" :class="{ active: isActive(tab) }">
-          <div class="pane" :style="{ flexGrow: tab.panelOpen ? 1 - tab.panelHeight : 1 }">
-            <TerminalView
-              :cwd="tab.initialCwd"
-              :focused="isActive(tab) && tab.focusedPane === 'main'"
-              @focus="tab.focusedPane = 'main'"
-              @spawned="sessions.set(tab.id, $event)"
-              @exit="onExit(tab.id)"
-            />
+          <div class="pane main" :style="{ flexGrow: tab.panelOpen ? 1 - tab.panelHeight : 1 }">
+            <EditorTabs v-if="tab.files.length" :tab="tab" :home="home" :status="git" />
+            <div class="layers">
+              <div class="layer" :class="{ shown: tab.view === -1 }">
+                <TerminalView
+                  :cwd="tab.initialCwd"
+                  :focused="isActive(tab) && tab.focusedPane === 'main' && tab.view === -1"
+                  @focus="tab.focusedPane = 'main'"
+                  @spawned="sessions.set(tab.id, $event)"
+                  @exit="onExit(tab.id)"
+                />
+              </div>
+              <!-- Arquivos ficam montados (escondidos) pra manter a rolagem ao trocar de aba. -->
+              <div
+                v-for="(file, i) in tab.files"
+                :key="file.root + '/' + file.path"
+                class="layer"
+                :class="{ shown: tab.view === i }"
+                @mousedown="tab.focusedPane = 'main'"
+              >
+                <FileView :file="file" :status="git" />
+              </div>
+            </div>
           </div>
 
           <template v-if="tab.panelAlive">
@@ -245,14 +250,15 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
         </div>
       </div>
 
-      <template v-if="viewer.files.length">
-        <div class="resizer" @pointerdown.prevent="resizeViewer" />
-        <FileViewer :status="git" :style="{ width: viewerWidth + 'px', flexShrink: 0 }" />
-      </template>
-
       <template v-if="diffOpen && git">
         <div class="resizer" @pointerdown.prevent="resizeDiff" />
-        <DiffPanel :status="git" :style="{ width: diffWidth + 'px' }" @close="diffOpen = false" @refresh="refreshGit" />
+        <FileExplorer
+          :status="git"
+          :active-path="(activeTab && shownFile(activeTab)?.path) ?? null"
+          :style="{ width: diffWidth + 'px' }"
+          @close="diffOpen = false"
+          @refresh="refreshGit"
+        />
       </template>
     </div>
 
@@ -312,6 +318,24 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
 .pane {
   flex-basis: 0;
   min-height: 0;
+}
+.pane.main {
+  display: flex;
+  flex-direction: column;
+}
+/* Terminal e arquivos empilhados: só o da aba escolhida aparece. */
+.layers {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+.layer {
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+}
+.slot.active .layer.shown {
+  visibility: visible;
 }
 .pane.bottom {
   display: flex;

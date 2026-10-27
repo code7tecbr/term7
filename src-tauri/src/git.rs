@@ -5,9 +5,6 @@ use std::{collections::HashMap, path::Path, process::Command};
 
 use serde::Serialize;
 
-/// Diffs maiores que isso são cortados, pra não travar a interface.
-const MAX_DIFF_BYTES: usize = 1024 * 1024;
-
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileChange {
@@ -104,10 +101,13 @@ fn numstat(root: &str, staged: bool) -> HashMap<String, (u32, u32, bool)> {
     map
 }
 
+/// Arquivo novo maior que isso não tem as linhas contadas (conta como binário).
+const MAX_COUNT_BYTES: usize = 1024 * 1024;
+
 /// Conta as linhas de um arquivo novo (não rastreado). Binário ou muito grande: (0, true).
 fn count_lines(path: &Path) -> (u32, bool) {
     match std::fs::read(path) {
-        Ok(bytes) if bytes.len() <= MAX_DIFF_BYTES => {
+        Ok(bytes) if bytes.len() <= MAX_COUNT_BYTES => {
             if bytes.iter().take(8000).any(|&b| b == 0) {
                 (0, true)
             } else {
@@ -187,42 +187,6 @@ fn read_status(cwd: &str) -> Option<GitStatus> {
     Some(status)
 }
 
-fn read_diff(root: &str, path: &str, orig_path: Option<&str>, untracked: bool) -> String {
-    let stdout = |args: &[&str]| {
-        git(root, args)
-            .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
-            .unwrap_or_default()
-    };
-    let base = ["diff", "--no-color", "--no-ext-diff", "-M"];
-
-    let mut diff = if untracked {
-        // Sai com código 1 quando há diferença, então usa o stdout mesmo assim.
-        stdout(&[&base[..], &["--no-index", "--", "/dev/null", path]].concat())
-    } else {
-        let mut paths = vec!["--"];
-        paths.extend(orig_path);
-        paths.push(path);
-        let has_head = git(root, &["rev-parse", "--verify", "-q", "HEAD"])
-            .is_some_and(|o| o.status.success());
-        if has_head {
-            stdout(&[&base[..], &["HEAD"], &paths].concat())
-        } else {
-            // Repositório sem nenhum commit: mostra o que está no stage + o que não está.
-            stdout(&[&base[..], &["--cached"], &paths].concat()) + &stdout(&[&base[..], &paths].concat())
-        }
-    };
-
-    if diff.len() > MAX_DIFF_BYTES {
-        let mut cut = MAX_DIFF_BYTES;
-        while !diff.is_char_boundary(cut) {
-            cut -= 1;
-        }
-        diff.truncate(cut);
-        diff.push_str("\n\\ term7: diff cortado (arquivo muito grande)\n");
-    }
-    diff
-}
-
 // Comandos async + spawn_blocking: o git pode demorar e não pode travar a thread da janela.
 
 #[tauri::command]
@@ -232,14 +196,32 @@ pub async fn git_status(cwd: String) -> Result<Option<GitStatus>, String> {
         .map_err(|e| e.to_string())
 }
 
+/// Limite da lista do explorador: repositório gigante não pode travar a interface.
+const MAX_FILES: usize = 50_000;
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileList {
+    paths: Vec<String>,
+    truncated: bool,
+}
+
+/// Arquivos do repositório (rastreados + novos), sem os ignorados pelo .gitignore.
+fn ls_files(root: &str) -> FileList {
+    let out = git_ok(root, &["ls-files", "-z", "--cached", "--others", "--exclude-standard"])
+        .unwrap_or_default();
+    let mut paths: Vec<String> = out.split('\0').filter(|p| !p.is_empty()).map(String::from).collect();
+    // Arquivo com conflito aparece uma vez por estágio.
+    paths.sort_unstable();
+    paths.dedup();
+    let truncated = paths.len() > MAX_FILES;
+    paths.truncate(MAX_FILES);
+    FileList { paths, truncated }
+}
+
 #[tauri::command]
-pub async fn git_diff(
-    root: String,
-    path: String,
-    orig_path: Option<String>,
-    untracked: bool,
-) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || read_diff(&root, &path, orig_path.as_deref(), untracked))
+pub async fn git_ls_files(root: String) -> Result<FileList, String> {
+    tauri::async_runtime::spawn_blocking(move || ls_files(&root))
         .await
         .map_err(|e| e.to_string())
 }

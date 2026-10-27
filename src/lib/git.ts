@@ -25,54 +25,14 @@ export interface GitStatus {
 /** null quando a pasta não está dentro de um repositório. */
 export const gitStatus = (cwd: string) => invoke<GitStatus | null>("git_status", { cwd });
 
-export const gitDiff = (root: string, file: FileChange) =>
-  invoke<string>("git_diff", {
-    root,
-    path: file.path,
-    origPath: file.origPath,
-    untracked: file.kind === "untracked",
-  });
-
-export interface DiffLine {
-  kind: "hunk" | "add" | "del" | "ctx" | "meta";
-  text: string;
-  oldNo?: number;
-  newNo?: number;
+export interface FileList {
+  paths: string[];
+  /** Repositório enorme: a lista foi cortada. */
+  truncated: boolean;
 }
 
-/** Converte a saída do `git diff` em linhas prontas pra renderizar. */
-export function parseDiff(text: string): DiffLine[] {
-  const lines: DiffLine[] = [];
-  let inHunk = false;
-  let oldNo = 0;
-  let newNo = 0;
-
-  for (const line of text.replace(/\n$/, "").split("\n")) {
-    if (line.startsWith("diff --git")) {
-      inHunk = false;
-      continue;
-    }
-    const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/.exec(line);
-    if (hunk) {
-      oldNo = Number(hunk[1]);
-      newNo = Number(hunk[2]);
-      inHunk = true;
-      lines.push({ kind: "hunk", text: line });
-      continue;
-    }
-    if (!inHunk) {
-      if (line.startsWith("Binary files")) lines.push({ kind: "meta", text: "Arquivo binário" });
-      continue;
-    }
-    const sign = line[0];
-    const body = line.slice(1);
-    if (sign === "+") lines.push({ kind: "add", text: body, newNo: newNo++ });
-    else if (sign === "-") lines.push({ kind: "del", text: body, oldNo: oldNo++ });
-    else if (sign === "\\") lines.push({ kind: "meta", text: line.slice(2) });
-    else lines.push({ kind: "ctx", text: body, oldNo: oldNo++, newNo: newNo++ });
-  }
-  return lines;
-}
+/** Arquivos do repositório (rastreados + novos), respeitando o .gitignore. */
+export const gitLsFiles = (root: string) => invoke<FileList>("git_ls_files", { root });
 
 export interface FileContent {
   text: string;
