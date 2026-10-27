@@ -26,6 +26,18 @@ export interface Group {
   collapsed: boolean;
 }
 
+export type FileMode = "file" | "changes";
+
+/** Arquivo aberto numa aba da área principal. */
+export interface OpenFile {
+  root: string;
+  /** Caminho relativo à raiz do repositório. */
+  path: string;
+  /** Nome antigo, quando o arquivo foi renomeado (pra comparar com o HEAD). */
+  origPath: string | null;
+  mode: FileMode;
+}
+
 export interface Tab {
   id: number;
   /** Pasta onde o shell nasce. */
@@ -39,6 +51,10 @@ export interface Tab {
   name: string | null;
   color: string | null;
   tag: TagId | null;
+  /** Arquivos abertos em abas ao lado do terminal. */
+  files: OpenFile[];
+  /** O que a área principal mostra: -1 = terminal, senão o índice em files. */
+  view: number;
   /** Terminal inferior (como no VS Code). */
   panelAlive: boolean;
   panelOpen: boolean;
@@ -49,7 +65,7 @@ export interface Tab {
 }
 
 export type SavedTab = Pick<Tab, "cwd" | "groupId"> &
-  Partial<Pick<Tab, "name" | "color" | "tag" | "panelOpen" | "panelHeight">>;
+  Partial<Pick<Tab, "name" | "color" | "tag" | "panelOpen" | "panelHeight" | "files" | "view">>;
 
 function makeTab(fields: Partial<Tab>): Tab {
   return {
@@ -61,6 +77,8 @@ function makeTab(fields: Partial<Tab>): Tab {
     name: null,
     color: null,
     tag: null,
+    files: [],
+    view: -1,
     panelAlive: false,
     panelOpen: false,
     panelHeight: 0.35,
@@ -181,6 +199,8 @@ export function restoreLayout(
         color: t.color ?? null,
         // Ignora tag desconhecida (sessão de outra versão).
         tag: findTag(t.tag ?? null)?.id ?? null,
+        files: (t.files ?? []).map((f) => ({ ...f, mode: f.mode === "changes" ? "changes" : "file" })),
+        view: t.view !== undefined && t.view < (t.files?.length ?? 0) ? t.view : -1,
         panelAlive: !!t.panelOpen,
         panelOpen: !!t.panelOpen,
         panelHeight: t.panelHeight ?? 0.35,

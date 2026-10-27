@@ -14,7 +14,7 @@ pub fn run() {
             pty::pty_kill,
             pty::pty_info,
             git::git_status,
-            git::git_diff,
+            git::git_ls_files,
             git::git_show_head,
             git::git_branches,
             git::git_checkout,
