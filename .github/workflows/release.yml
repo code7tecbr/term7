@@ -2,22 +2,23 @@ name: Release
 
 on:
   push:
-    branches: [main]
+    # dev: só compila, pra manter o cache (Rust e apt) que os PRs pra dev podem ler.
+    branches: [main, dev]
   # Em PR só compila o .deb (sem versão, sem publicar): mostra se quebra antes do merge.
   pull_request:
 
 permissions:
   contents: write
 
-# Releases nunca rodam duas ao mesmo tempo; em PR, um push novo cancela o build anterior.
+# Releases nunca rodam duas ao mesmo tempo; nas outras branches, um push novo cancela o build anterior.
 concurrency:
-  group: ${{ github.event_name == 'push' && 'release' || format('pr-{0}', github.ref) }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.ref == 'refs/heads/main' && 'release' || format('build-{0}', github.ref) }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   # 1. Lê os commits (Conventional Commits), decide a versão e cria a tag + release.
   version:
-    if: github.event_name == 'push'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.semrel.outputs.version }}
@@ -38,8 +39,8 @@ jobs:
   # 2. Compila o .deb e anexa direto na release (sem upload de artifact do Actions).
   build-deb:
     needs: version
-    # Em PR o job version é pulado; !cancelled() deixa este rodar mesmo assim.
-    if: ${{ !cancelled() && (github.event_name == 'pull_request' || needs.version.outputs.version != '') }}
+    # Fora da main o job version é pulado; !cancelled() deixa este rodar mesmo assim.
+    if: ${{ !cancelled() && (github.ref != 'refs/heads/main' || needs.version.outputs.version != '') }}
     # O .deb fica ligado à glibc e ao WebKit desta versão: roda no 24.04 e mais novos.
     # Não subir sem necessidade, senão deixa de instalar em quem está no 24.04.
     runs-on: ubuntu-24.04
@@ -50,15 +51,40 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v7
-      # apt direto: a cache-apt-pkgs-action não recria os links .so dos pacotes -dev e o link falha.
+      # Cacheia só os .deb baixados (o espelho da Azure às vezes fica lento ou para no meio).
+      # O apt instala normalmente a partir deles; cachear os arquivos já instalados
+      # (cache-apt-pkgs-action) quebrava os links .so dos pacotes -dev.
+      - name: Cache dos pacotes do apt
+        id: apt-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/apt-archives
+          key: apt-${{ runner.os }}-24.04-${{ github.run_id }}
+          restore-keys: apt-${{ runner.os }}-24.04-
       - name: Dependências de sistema do Tauri
         timeout-minutes: 10
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get update -o Acquire::Retries=3
-          sudo apt-get install -y -o Acquire::Retries=3 libwebkit2gtk-4.1-dev build-essential \
+          mkdir -p ~/apt-archives/partial
+          # O runner baixa do espelho da Azure, que às vezes fica lentíssimo nos pacotes.
+          # O archive.ubuntu.com vem primeiro; a Azure fica de reserva se ele falhar.
+          printf 'http://archive.ubuntu.com/ubuntu/\tpriority:1\nhttp://azure.archive.ubuntu.com/ubuntu/\tpriority:2\n' |
+            sudo tee /etc/apt/apt-mirrors.txt
+          # Conexão parada falha em 30 s e tenta de novo, em vez de travar o job.
+          APT="-o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Dir::Cache::Archives=$HOME/apt-archives"
+          sudo apt-get update $APT
+          sudo apt-get install -y $APT libwebkit2gtk-4.1-dev build-essential \
             libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+          # O cache é salvo pelo usuário do runner: tira os arquivos do root.
+          sudo chown -R "$USER" ~/apt-archives
+      # Salva mesmo se o apt falhar: o que já baixou serve na próxima run.
+      - name: Salva o cache do apt
+        if: always()
+        uses: actions/cache/save@v6
+        with:
+          path: ~/apt-archives
+          key: ${{ steps.apt-cache.outputs.cache-primary-key }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
         with:
@@ -79,7 +105,7 @@ jobs:
   # 3. Mantém só a release atual + 2 anteriores. As mais velhas (e suas tags) são apagadas.
   cleanup:
     needs: build-deb
-    if: github.event_name == 'push'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
