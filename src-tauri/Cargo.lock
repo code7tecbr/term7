@@ -3332,6 +3332,7 @@ dependencies = [
 name = "term7"
 version = "0.1.0"
 dependencies = [
+ "gtk",
  "portable-pty",
  "serde",
  "serde_json",

@@ -71,3 +71,6 @@ export async function spawnPty(opts: SpawnOptions): Promise<PtySession> {
     info: () => invoke<PtyInfo>("pty_info", { id }),
   };
 }
+
+/** Grava na área de transferência pelo lado nativo (funciona sem clique/tecla recente). */
+export const clipboardWrite = (text: string) => invoke<void>("clipboard_write", { text });

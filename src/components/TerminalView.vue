@@ -3,7 +3,7 @@ import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { spawnPty, type PtySession } from "../lib/pty";
+import { clipboardWrite, spawnPty, type PtySession } from "../lib/pty";
 import { attachLinks } from "../lib/links";
 import { attachPathLinks, type PathTarget } from "../lib/paths";
 import { matchShortcut } from "../lib/shortcuts";
@@ -99,6 +99,26 @@ function handleClipboard(e: KeyboardEvent, t: Terminal) {
 }
 
 /**
+ * OSC 52: programas como o Claude CLI copiam mandando o texto pro terminal
+ * (sem isso, a cópia feita dentro deles se perdia). Texto vazio é ignorado pra
+ * não apagar o que já foi copiado, e pedido de leitura ("?") nunca é atendido:
+ * qualquer programa rodando leria a área de transferência.
+ */
+function handleOsc52(data: string) {
+  const payload = data.slice(data.indexOf(";") + 1);
+  if (!payload || payload === "?") return true;
+  try {
+    const bytes = Uint8Array.from(atob(payload), (c) => c.charCodeAt(0));
+    const text = new TextDecoder().decode(bytes);
+    // Pelo GTK: o WebKit recusa writeText fora de um clique ou tecla.
+    if (text) clipboardWrite(text).catch(() => {});
+  } catch {
+    // base64 inválido: descarta
+  }
+  return true;
+}
+
+/**
  * Comando sugerido -> prompt do Claude no modo bash: o "!" digitado troca o
  * modo e o comando vai como colagem, sem Enter (quem confirma é o usuário).
  */
@@ -144,6 +164,7 @@ onMounted(async () => {
   t.open(container.value!);
   loadWebgl(t);
   attachLinks(t);
+  t.parser.registerOscHandler(52, handleOsc52);
   // Caminho relativo é resolvido na pasta atual do shell da aba.
   attachPathLinks(t, async () => (await session?.info())?.cwd ?? null, (target) => emit("openPath", target));
   attachSuggestions(

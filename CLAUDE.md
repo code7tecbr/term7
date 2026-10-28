@@ -39,6 +39,7 @@ src-tauri/src/
   gh.rs                   PR e runs via `gh`; open_url (xdg-open, só http(s))
   claude.rs               Claude Code: avisos via hooks (TERM7_PANE) e MCPs do projeto da aba, ou os globais a pedido (`claude mcp get` com o binário/ambiente do processo)
   suggest.rs              comandos sugeridos: lê o histórico da sessão do Claude (sessions/<pid>.json -> projects/<pasta>/<id>.jsonl)
+  clipboard.rs            cópia pedida pelo terminal (OSC 52) via GTK: o WebKit recusa writeText fora de clique/tecla
   files.rs                leitura de arquivo pro visualizador; resolve_paths (caminhos clicáveis)
   session.rs              session.json em ~/.local/share/br.tec.code7.term7/
   update.rs               atualização: última release via `gh api`, baixa o .deb e instala com `pkexec apt-get`
