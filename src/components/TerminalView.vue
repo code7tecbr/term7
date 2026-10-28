@@ -3,7 +3,7 @@ import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { spawnPty, type PtySession } from "../lib/pty";
+import { clipboardWrite, spawnPty, type PtySession } from "../lib/pty";
 import { attachLinks } from "../lib/links";
 import { attachPathLinks, type PathTarget } from "../lib/paths";
 import { matchShortcut } from "../lib/shortcuts";
@@ -110,7 +110,8 @@ function handleOsc52(data: string) {
   try {
     const bytes = Uint8Array.from(atob(payload), (c) => c.charCodeAt(0));
     const text = new TextDecoder().decode(bytes);
-    if (text) navigator.clipboard.writeText(text).catch(() => {});
+    // Pelo GTK: o WebKit recusa writeText fora de um clique ou tecla.
+    if (text) clipboardWrite(text).catch(() => {});
   } catch {
     // base64 inválido: descarta
   }
