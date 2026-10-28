@@ -435,6 +435,7 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
                   @focus="tab.focusedPane = 'main'"
                   @spawned="sessions.set(tab.id, $event)"
                   @open-path="openPath(tab, $event)"
+                  @run-in-panel="typeInPanel($event)"
                   @exit="onExit(tab.id)"
                 />
               </div>
@@ -472,6 +473,7 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
                   @focus="tab.focusedPane = 'panel'"
                   @spawned="onPanelSpawned(tab.id, $event)"
                   @open-path="openPath(tab, $event)"
+                  @run-in-panel="typeInPanel($event)"
                   @exit="panelSessions.delete(tab.id), closePanel(tab.id)"
                 />
               </div>

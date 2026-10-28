@@ -4,6 +4,7 @@ mod gh;
 mod git;
 mod pty;
 mod session;
+mod suggest;
 mod update;
 
 pub fn run() {
@@ -28,6 +29,7 @@ pub fn run() {
             claude::claude_hooks_status,
             claude::claude_hooks_install,
             claude::claude_mcp_list,
+            suggest::claude_suggestions,
             files::read_text_file,
             files::resolve_paths,
             session::session_load,
