@@ -124,8 +124,15 @@ export function attachSuggestions(term: Terminal, ptyId: () => number | undefine
     clearTimeout(timer);
     timer = setTimeout(scan, ms);
   };
-  // Saída do Claude chega em rajadas: espera assentar antes de procurar.
-  term.onWriteParsed(() => schedule(600));
+  // Saída do Claude chega em rajadas: espera assentar antes de procurar. O
+  // Claude grava a resposta no histórico um pouco depois de desenhar a tela,
+  // então procura de novo mais tarde (o backend só relê se o arquivo mudou).
+  let late: ReturnType<typeof setTimeout>[] = [];
+  term.onWriteParsed(() => {
+    schedule(600);
+    late.forEach(clearTimeout);
+    late = [2500, 6000].map((ms) => setTimeout(scan, ms));
+  });
   term.onScroll(() => schedule(150));
   term.onResize(() => schedule(300));
 }
