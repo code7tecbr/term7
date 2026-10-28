@@ -145,6 +145,10 @@ const prState = computed(() => {
   if (p.state === "MERGED") return { cls: "merged", label: "mergeado" };
   if (p.state === "CLOSED") return { cls: "closed", label: "fechado" };
   if (p.isDraft) return { cls: "draft", label: "rascunho" };
+  // Ordem de prioridade: o que pede ação primeiro.
+  if (p.reviewDecision === "CHANGES_REQUESTED") return { cls: "changes", label: "alterações pedidas", mark: "±" };
+  if (p.reviewDecision === "APPROVED") return { cls: "approved", label: "aprovado", mark: "✓" };
+  if (p.reviewRequested) return { cls: "review", label: "aguardando review", mark: "●" };
   return { cls: "opened", label: "aberto" };
 });
 
@@ -218,6 +222,7 @@ const totals = computed(() => {
           <button class="btn pr" :class="prState.cls" :title="`#${pr.number} ${pr.title}\n${prState.label} — abrir no navegador`" @click="open(pr.url)">
             <svg viewBox="0 0 16 16" width="13" height="13"><circle cx="4.5" cy="3.5" r="1.5" fill="none" stroke="currentColor" stroke-width="1.2" /><circle cx="4.5" cy="12.5" r="1.5" fill="none" stroke="currentColor" stroke-width="1.2" /><circle cx="11.5" cy="12.5" r="1.5" fill="none" stroke="currentColor" stroke-width="1.2" /><path d="M4.5 5v6M11.5 11V6.5A1.5 1.5 0 0 0 10 5H7.5m0 0L9 3.5M7.5 5 9 6.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
             #{{ pr.number }}
+            <span v-if="prState.mark" class="mark">{{ prState.mark }}</span>
           </button>
         </template>
 
@@ -389,8 +394,24 @@ const totals = computed(() => {
 .btn.icon {
   padding: 0 5px;
 }
+/* Cor = estado do PR; o fundo leve ajuda a ver de longe. */
 .pr.opened {
+  color: var(--accent);
+}
+.pr.review {
+  background: color-mix(in srgb, var(--yellow) 14%, transparent);
+  color: var(--yellow);
+}
+.pr.approved {
+  background: color-mix(in srgb, var(--green) 14%, transparent);
   color: var(--green);
+}
+.pr.changes {
+  background: color-mix(in srgb, #ff9e64 16%, transparent);
+  color: #ff9e64;
+}
+.pr .mark {
+  font-size: 10px;
 }
 .pr.merged {
   color: var(--purple);
