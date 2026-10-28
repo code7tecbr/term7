@@ -33,6 +33,9 @@ export type FileMode = "file" | "changes" | "preview";
 /** Arquivos que dá pra ver renderizados (Markdown e HTML). */
 export const canPreview = (path: string) => /\.(md|markdown|html?)$/i.test(path);
 
+/** Arquivos de leitura (texto, log) que também abrem no pop-up ao clicar no terminal. */
+export const isReadable = (path: string) => canPreview(path) || /\.(txt|log|text)$/i.test(path);
+
 /** Arquivo aberto numa aba da área principal. */
 export interface OpenFile {
   root: string;
