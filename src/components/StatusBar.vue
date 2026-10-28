@@ -54,17 +54,31 @@ function openRelease() {
 }
 
 // ---- atualização ----
-// Confere ao abrir e a cada 6 h. Build local ("dev") não confere: não tem pra quê.
+// Confere ao abrir, a cada 30 min e quando a janela volta ao foco (no máximo a
+// cada 10 min, pra não consultar o GitHub toda hora). Build local ("dev") não confere.
 const update = ref<UpdateInfo | null>(null);
 const updating = ref<"idle" | "installing" | "installed">("idle");
 const updateError = ref<string | null>(null);
+const UPDATE_EVERY_MS = 30 * 60_000;
+const UPDATE_MIN_GAP_MS = 10 * 60_000;
+let updateCheckedAt = 0;
 
 async function refreshUpdate() {
   if (!version.value || isDev.value || updating.value !== "idle") return;
-  update.value = await checkUpdate().catch(() => null);
+  updateCheckedAt = Date.now();
+  const info = await checkUpdate().catch(() => null);
+  // Falha de rede não apaga um aviso que já estava na tela.
+  if (info) update.value = info;
 }
-const updateTimer = setInterval(refreshUpdate, 6 * 60 * 60 * 1000);
-onBeforeUnmount(() => clearInterval(updateTimer));
+function refreshUpdateIfStale() {
+  if (Date.now() - updateCheckedAt >= UPDATE_MIN_GAP_MS) refreshUpdate();
+}
+const updateTimer = setInterval(refreshUpdate, UPDATE_EVERY_MS);
+window.addEventListener("focus", refreshUpdateIfStale);
+onBeforeUnmount(() => {
+  clearInterval(updateTimer);
+  window.removeEventListener("focus", refreshUpdateIfStale);
+});
 
 async function runUpdate() {
   const u = update.value;
