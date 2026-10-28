@@ -29,3 +29,32 @@ html, body, #app {
   color: var(--fg);
   font-family: system-ui, sans-serif;
 }
+
+/* Botões ao lado dos comandos sugeridos pelo Claude (decorações do xterm). */
+.t7-run-box {
+  display: flex;
+  gap: 2px;
+  pointer-events: auto;
+  z-index: 6;
+}
+.t7-run {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--green) 45%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--green) 14%, var(--bg));
+  color: var(--green);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
+.t7-run + .t7-run {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+  color: var(--accent);
+}
+.t7-run:hover {
+  filter: brightness(1.35);
+}

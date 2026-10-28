@@ -414,7 +414,8 @@ onBeforeUnmount(() => view?.destroy());
 .markdown {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  min-width: 0;
+  overflow: auto;
   padding: 20px 32px 40px;
   color: var(--fg);
   font-size: 14px;
@@ -464,7 +465,11 @@ onBeforeUnmount(() => view?.destroy());
   border-left: 3px solid var(--border);
   color: var(--fg-muted);
 }
+/* Tabela larga rola sozinha, sem empurrar o resto da página. */
 .markdown :deep(table) {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
   border-collapse: collapse;
 }
 .markdown :deep(th),

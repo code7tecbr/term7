@@ -9,6 +9,7 @@ import FileExplorer from "./components/FileExplorer.vue";
 import EditorTabs from "./components/EditorTabs.vue";
 import BranchPicker from "./components/BranchPicker.vue";
 import McpMenu from "./components/McpMenu.vue";
+import PreviewPopup from "./components/PreviewPopup.vue";
 import { openFile, showTerminal, shownFile } from "./state/editor";
 import { reviewPrompt } from "./state/review";
 import type { PathTarget } from "./lib/paths";
@@ -39,6 +40,8 @@ import {
   store,
   tabTitle,
   togglePanel,
+  canPreview,
+  type OpenFile,
   type Tab,
 } from "./state/tabs";
 
@@ -104,17 +107,30 @@ async function pollSessions() {
 const pollTimer = setInterval(pollSessions, 1000);
 
 // ---- caminhos clicados no terminal: abrem numa aba da área principal ----
+/** Markdown/HTML clicado no terminal: aparece num pop-up, sem abrir aba. */
+const popup = ref<{ tab: Tab; file: OpenFile } | null>(null);
+
 function openPath(tab: Tab, { path, line }: PathTarget) {
   // Dentro do repositório atual: abre relativo à raiz, com o status do git (alterações).
   const root = git.value?.root;
   const inRepo = root && path.startsWith(root + "/");
   const cut = path.lastIndexOf("/");
-  openFile(
-    inRepo
-      ? { root, path: path.slice(root.length + 1), origPath: null, line }
-      : { root: path.slice(0, cut) || "/", path: path.slice(cut + 1), origPath: null, line },
-    tab,
-  );
+  const file = inRepo
+    ? { root, path: path.slice(root.length + 1), origPath: null, line }
+    : { root: path.slice(0, cut) || "/", path: path.slice(cut + 1), origPath: null, line };
+  // Com linha (arquivo.md:42) a ideia é ir ao trecho: abre em aba, no código.
+  if (canPreview(file.path) && !line) {
+    popup.value = { tab, file: reactive({ ...file, mode: "preview" }) };
+    return;
+  }
+  openFile(file, tab);
+}
+
+function popupToTab() {
+  const p = popup.value;
+  if (!p) return;
+  openFile({ ...p.file }, p.tab);
+  popup.value = null;
 }
 
 // ---- avisos do Claude ----
@@ -162,9 +178,11 @@ watch(
   },
 );
 
-// ---- servidores MCP do Claude da aba (só os do projeto) ----
+// ---- servidores MCP do Claude da aba (os do projeto; os globais só a pedido) ----
 interface McpState {
   servers: McpServer[] | null;
+  /** Mostrando os globais (o usuário pediu, no menu). */
+  global: boolean;
   loading: boolean;
   error: string | null;
   at: number | null;
@@ -175,17 +193,20 @@ const mcpByTab = reactive(new Map<number, McpState>());
 const mcpOpen = ref(false);
 const activeMcp = computed(() => (activeTab.value ? mcpByTab.get(activeTab.value.id) ?? null : null));
 
-async function refreshMcp(tabId: number, maxAge = 0) {
+async function refreshMcp(tabId: number, maxAge = 0, global = mcpByTab.get(tabId)?.global ?? false) {
   const session = sessions.get(tabId);
   const current = mcpByTab.get(tabId);
   if (!session || current?.loading) return;
-  if (current?.at && Date.now() - current.at < maxAge) return;
-  mcpByTab.set(tabId, { servers: current?.servers ?? null, loading: true, error: null, at: current?.at ?? null });
+  const same = current?.global === global;
+  if (same && current?.at && Date.now() - current.at < maxAge) return;
+  // Trocou entre projeto e globais: a lista antiga não vale.
+  const keep = same ? current : undefined;
+  mcpByTab.set(tabId, { servers: keep?.servers ?? null, global, loading: true, error: null, at: keep?.at ?? null });
   try {
-    const servers = await claudeMcpList(session.id);
-    mcpByTab.set(tabId, { servers, loading: false, error: null, at: Date.now() });
+    const servers = await claudeMcpList(session.id, global);
+    mcpByTab.set(tabId, { servers, global, loading: false, error: null, at: Date.now() });
   } catch (err) {
-    mcpByTab.set(tabId, { servers: current?.servers ?? null, loading: false, error: String(err), at: current?.at ?? null });
+    mcpByTab.set(tabId, { servers: keep?.servers ?? null, global, loading: false, error: String(err), at: keep?.at ?? null });
   }
 }
 
@@ -414,6 +435,7 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
                   @focus="tab.focusedPane = 'main'"
                   @spawned="sessions.set(tab.id, $event)"
                   @open-path="openPath(tab, $event)"
+                  @run-in-panel="typeInPanel($event)"
                   @exit="onExit(tab.id)"
                 />
               </div>
@@ -451,6 +473,7 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
                   @focus="tab.focusedPane = 'panel'"
                   @spawned="onPanelSpawned(tab.id, $event)"
                   @open-path="openPath(tab, $event)"
+                  @run-in-panel="typeInPanel($event)"
                   @exit="panelSessions.delete(tab.id), closePanel(tab.id)"
                 />
               </div>
@@ -494,6 +517,14 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
       @toggle-mcp="toggleMcp"
     />
 
+    <PreviewPopup
+      v-if="popup"
+      :tab="popup.tab"
+      :file="popup.file"
+      :status="git"
+      @close="popup = null"
+      @open-tab="popupToTab"
+    />
     <McpMenu
       v-if="mcpOpen && activeTab"
       :servers="activeMcp?.servers ?? null"
@@ -502,7 +533,9 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
       :config-dir="claudeHooks?.settingsPath.replace(/\/settings\.json$/, '').replace(home ?? '\0', '~') ?? null"
       :checked-at="activeMcp?.at ?? null"
       @close="mcpOpen = false"
+      :global="!!activeMcp?.global"
       @refresh="activeTab && refreshMcp(activeTab.id)"
+      @scope="(global: boolean) => activeTab && refreshMcp(activeTab.id, 0, global)"
       @authenticate="authenticateMcp"
     />
 

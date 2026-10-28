@@ -299,6 +299,8 @@ pub struct McpServer {
     status: &'static str,
     /// Motivo da falha, quando houver.
     detail: Option<String>,
+    /// Servidor de escopo de usuário (pedido pelo botão "Ver os globais").
+    global: bool,
 }
 
 /// Endereço sem credenciais: URL fica só com host e caminho; comando, só com o
@@ -368,7 +370,7 @@ fn parse_mcp_get(name: &str, output: &str) -> McpServer {
         Some(s) => classify(&s),
         None => ("unknown", Some("o Claude não informou o status".into())),
     };
-    McpServer { name: name.to_string(), target, status, detail }
+    McpServer { name: name.to_string(), target, status, detail, global: false }
 }
 
 /// Nomes dos MCPs do projeto: os do `.mcp.json` e os de escopo local (no
@@ -397,6 +399,12 @@ fn project_servers(cwd: &Path, config: &Value, home: Option<&Path>) -> Vec<Strin
         }
     }
     names
+}
+
+/// Globais: escopo de usuário (`mcpServers` na raiz do `.claude.json`). Os
+/// conectores do claude.ai ficam de fora: não estão no arquivo e checar todos é lento.
+fn user_servers(config: &Value) -> Vec<String> {
+    config.get("mcpServers").and_then(Value::as_object).map(|m| m.keys().cloned().collect()).unwrap_or_default()
 }
 
 /// Roda o binário do Claude da aba com o ambiente e a pasta dele, com prazo.
@@ -432,7 +440,7 @@ fn run_claude(exe: &Path, cwd: &Path, env: &[(String, String)], args: &[&str], t
 
 /// Checa os MCPs do projeto como o Claude da aba faria: mesmo binário,
 /// ambiente (CLAUDE_CONFIG_DIR) e pasta. Um `claude mcp get` por servidor, em paralelo.
-fn mcp_list(foreground: u32) -> Result<Vec<McpServer>, String> {
+fn mcp_list(foreground: u32, global: bool) -> Result<Vec<McpServer>, String> {
     let comm = std::fs::read_to_string(format!("/proc/{foreground}/comm")).unwrap_or_default();
     if comm.trim() != "claude" {
         return Err("o Claude não está rodando nesta aba".into());
@@ -456,16 +464,17 @@ fn mcp_list(foreground: u32) -> Result<Vec<McpServer>, String> {
     };
     let config = read_settings(&config_file).unwrap_or(Value::Null);
 
-    let names = project_servers(&cwd, &config, home.as_deref());
+    let names = if global { user_servers(&config) } else { project_servers(&cwd, &config, home.as_deref()) };
     let handles: Vec<_> = names
         .into_iter()
         .map(|name| {
             let (exe, cwd, env) = (exe.clone(), cwd.clone(), env.clone());
             std::thread::spawn(move || {
-                match run_claude(&exe, &cwd, &env, &["mcp", "get", &name], Duration::from_secs(30)) {
+                let server = match run_claude(&exe, &cwd, &env, &["mcp", "get", &name], Duration::from_secs(30)) {
                     Ok(out) => parse_mcp_get(&name, &out),
-                    Err(e) => McpServer { name, target: String::new(), status: "failed", detail: Some(e) },
-                }
+                    Err(e) => McpServer { name, target: String::new(), status: "failed", detail: Some(e), global: false },
+                };
+                McpServer { global, ..server }
             })
         })
         .collect();
@@ -473,9 +482,9 @@ fn mcp_list(foreground: u32) -> Result<Vec<McpServer>, String> {
 }
 
 #[tauri::command]
-pub async fn claude_mcp_list(state: State<'_, PtyState>, id: u32) -> Result<Vec<McpServer>, String> {
+pub async fn claude_mcp_list(state: State<'_, PtyState>, id: u32, global: bool) -> Result<Vec<McpServer>, String> {
     let fg = crate::pty::foreground_pid(&state, id).ok_or("aba não encontrada")?;
-    tauri::async_runtime::spawn_blocking(move || mcp_list(fg))
+    tauri::async_runtime::spawn_blocking(move || mcp_list(fg, global))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -515,6 +524,8 @@ mod mcp_tests {
         });
         let names = project_servers(&sub, &config, Some(&dir));
         assert_eq!(names, ["local", "blender", "playwright"]);
+        assert!(project_servers(&dir, &config, Some(&dir)).is_empty());
+        assert_eq!(user_servers(&config), ["global"]);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

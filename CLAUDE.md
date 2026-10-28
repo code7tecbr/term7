@@ -21,7 +21,7 @@ docker compose run --rm --no-deps dev bash -c "cd src-tauri && cargo check"   # 
 ```
 src/
   App.vue                 layout: sidebar | área principal (abas: terminal + arquivos; terminal inferior) | explorador
-  components/             TabSidebar, TerminalView, EditorTabs, FileView (lazy), FileExplorer, BranchPicker, McpMenu, StatusBar, ContextMenu
+  components/             TabSidebar, TerminalView, EditorTabs, FileView (lazy), PreviewPopup, FileExplorer, BranchPicker, McpMenu, StatusBar, ContextMenu
   state/tabs.ts           abas e grupos (store reativo); regra: abas de um grupo são sempre contíguas
   state/session.ts        salva/restaura o layout
   state/editor.ts         arquivos abertos na área principal (cada aba lateral tem os seus)
@@ -31,12 +31,14 @@ src/
   lib/github.ts           PR, checks e runs (via gh); useGithub.ts faz o polling
   lib/links.ts, paths.ts  URLs e caminhos de arquivo clicáveis na saída do terminal
   lib/shortcuts.ts        atalhos globais (o terminal ignora essas teclas)
+  lib/suggestions.ts      botões ▶/⤓ ao lado dos comandos que o Claude sugeriu (procura o texto na tela)
   lib/update.ts           confere/instala a versão nova (botão ao lado da versão, na barra)
 src-tauri/src/
   pty.rs                  sessões de shell (spawn/write/resize/kill/info via /proc)
   git.rs                  status, ls-files, branches, checkout, fetch, info do repo (usa o binário `git`)
   gh.rs                   PR e runs via `gh`; open_url (xdg-open, só http(s))
-  claude.rs               Claude Code: avisos via hooks (TERM7_PANE) e MCPs do projeto da aba (`claude mcp get` com o binário/ambiente do processo)
+  claude.rs               Claude Code: avisos via hooks (TERM7_PANE) e MCPs do projeto da aba, ou os globais a pedido (`claude mcp get` com o binário/ambiente do processo)
+  suggest.rs              comandos sugeridos: lê o histórico da sessão do Claude (sessions/<pid>.json -> projects/<pasta>/<id>.jsonl)
   files.rs                leitura de arquivo pro visualizador; resolve_paths (caminhos clicáveis)
   session.rs              session.json em ~/.local/share/br.tec.code7.term7/
   update.rs               atualização: última release via `gh api`, baixa o .deb e instala com `pkexec apt-get`
