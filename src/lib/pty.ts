@@ -31,7 +31,7 @@ export interface McpServer {
   detail: string | null;
 }
 
-/** `claude mcp list` do Claude da aba (mesmo binário, ambiente e pasta). Leva alguns segundos. */
+/** MCPs do projeto do Claude da aba (`claude mcp get` com o binário, ambiente e pasta dele). */
 export const claudeMcpList = (id: number) => invoke<McpServer[]>("claude_mcp_list", { id });
 
 export const claudeHooksInstall = (id: number) => invoke<ClaudeHooksStatus>("claude_hooks_install", { id });

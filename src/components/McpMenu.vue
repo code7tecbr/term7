@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import type { McpServer } from "../lib/pty";
 
-/** Servidores MCP do Claude da aba ativa (saída do `claude mcp list`). */
+/** Servidores MCP do Claude da aba ativa (só os do projeto, via `claude mcp get`). */
 const props = defineProps<{
   servers: McpServer[] | null;
   loading: boolean;
@@ -59,7 +59,7 @@ onBeforeUnmount(() => {
 <template>
   <div ref="box" class="mcp" @mousedown.prevent>
     <div class="head">
-      <span class="title">Servidores MCP</span>
+      <span class="title">MCPs do projeto</span>
       <span class="config" :title="configDir ?? ''">{{ configDir }}</span>
       <button class="refresh" :class="{ spinning: loading }" title="Verificar de novo" :disabled="loading" @click="emit('refresh')">
         <svg viewBox="0 0 16 16" width="14" height="14"><path d="M13 8a5 5 0 1 1-1.5-3.5M13 3v2.5h-2.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
@@ -69,7 +69,7 @@ onBeforeUnmount(() => {
     <div v-if="error" class="error">{{ error }}</div>
     <ul>
       <li v-if="loading && !servers" class="muted">Verificando os servidores…</li>
-      <li v-else-if="servers && !servers.length" class="muted">Nenhum servidor MCP configurado.</li>
+      <li v-else-if="servers && !servers.length" class="muted">Nenhum servidor MCP neste projeto (.mcp.json ou escopo local).</li>
       <li v-for="s in sorted" :key="s.name" :class="s.status" :title="s.detail ?? LABEL[s.status]">
         <span class="dot" />
         <div class="text">
