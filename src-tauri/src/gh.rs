@@ -5,7 +5,8 @@ use std::process::{Command, Stdio};
 
 use serde::Serialize;
 
-const PR_FIELDS: &str = "number,title,state,isDraft,url,statusCheckRollup";
+// reviewDecision e reviewRequests já existem no gh 2.4.
+const PR_FIELDS: &str = "number,title,state,isDraft,url,statusCheckRollup,reviewDecision,reviewRequests";
 // Só campos que existem no gh 2.4 (o do Ubuntu 22.04), que também não tem `run list --branch`.
 const RUN_FIELDS: &str = "databaseId,name,status,conclusion,url,headSha,headBranch";
 

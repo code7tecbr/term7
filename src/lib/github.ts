@@ -34,6 +34,10 @@ export interface PullRequest {
   isDraft: boolean;
   url: string;
   checks: Check[];
+  /** APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED | null (sem regra de review). */
+  reviewDecision: string | null;
+  /** Há revisor (pessoa ou time) com review pendente. */
+  reviewRequested: boolean;
 }
 
 /** Uma execução de workflow, pra branch sem PR. */
@@ -121,6 +125,8 @@ export async function fetchPullRequest(root: string): Promise<GithubStatus | nul
       isDraft: !!raw.isDraft,
       url: raw.url,
       checks: ((raw.statusCheckRollup ?? []) as RawCheck[]).map(parseCheck),
+      reviewDecision: raw.reviewDecision || null,
+      reviewRequested: Array.isArray(raw.reviewRequests) && raw.reviewRequests.length > 0,
     },
   };
 }
