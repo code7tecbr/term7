@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { defineAsyncComponent, onBeforeUnmount, onMounted } from "vue";
 import type { GitStatus } from "../lib/git";
-import type { OpenFile, Tab } from "../state/tabs";
+import { canPreview, type OpenFile, type Tab } from "../state/tabs";
 
-/** Markdown/HTML clicado na saída do terminal: visualização rápida, sem abrir aba. */
+/** Markdown/HTML/texto clicado na saída do terminal: visualização rápida, sem abrir aba. */
 const props = defineProps<{ tab: Tab; file: OpenFile; status: GitStatus | null }>();
 const emit = defineEmits<{ close: []; openTab: [] }>();
 
@@ -25,7 +25,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
     <div class="popup" role="dialog" :aria-label="file.path">
       <header @mousedown.prevent>
         <span class="name" :title="`${file.root}/${file.path}`">{{ file.path.slice(file.path.lastIndexOf("/") + 1) }}</span>
-        <div class="modes">
+        <div v-if="canPreview(file.path)" class="modes">
           <button :class="{ on: file.mode === 'preview' }" @click="props.file.mode = 'preview'">Visualizar</button>
           <button :class="{ on: file.mode === 'file' }" @click="props.file.mode = 'file'">Código</button>
         </div>

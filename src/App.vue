@@ -41,6 +41,7 @@ import {
   tabTitle,
   togglePanel,
   canPreview,
+  isReadable,
   type OpenFile,
   type Tab,
 } from "./state/tabs";
@@ -107,7 +108,7 @@ async function pollSessions() {
 const pollTimer = setInterval(pollSessions, 1000);
 
 // ---- caminhos clicados no terminal: abrem numa aba da área principal ----
-/** Markdown/HTML clicado no terminal: aparece num pop-up, sem abrir aba. */
+/** Markdown/HTML/texto clicado no terminal: aparece num pop-up, sem abrir aba. */
 const popup = ref<{ tab: Tab; file: OpenFile } | null>(null);
 
 function openPath(tab: Tab, { path, line }: PathTarget) {
@@ -119,8 +120,8 @@ function openPath(tab: Tab, { path, line }: PathTarget) {
     ? { root, path: path.slice(root.length + 1), origPath: null, line }
     : { root: path.slice(0, cut) || "/", path: path.slice(cut + 1), origPath: null, line };
   // Com linha (arquivo.md:42) a ideia é ir ao trecho: abre em aba, no código.
-  if (canPreview(file.path) && !line) {
-    popup.value = { tab, file: reactive({ ...file, mode: "preview" }) };
+  if (isReadable(file.path) && !line) {
+    popup.value = { tab, file: reactive({ ...file, mode: canPreview(file.path) ? "preview" : "file" }) };
     return;
   }
   openFile(file, tab);
