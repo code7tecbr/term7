@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import type { McpServer } from "../lib/pty";
 
-/** Servidores MCP do Claude da aba ativa (só os do projeto, via `claude mcp get`). */
+/** Servidores MCP do Claude da aba ativa (os do projeto, ou os globais se ele não tiver; via `claude mcp get`). */
 const props = defineProps<{
   servers: McpServer[] | null;
   loading: boolean;
@@ -10,8 +10,10 @@ const props = defineProps<{
   /** Pasta de configuração do Claude da aba (ex.: ~/.claude-code7). */
   configDir: string | null;
   checkedAt: number | null;
+  /** Mostrando os globais em vez dos do projeto. */
+  global: boolean;
 }>();
-const emit = defineEmits<{ close: []; refresh: []; authenticate: [] }>();
+const emit = defineEmits<{ close: []; refresh: []; authenticate: []; scope: [global: boolean] }>();
 
 const box = ref<HTMLDivElement>();
 
@@ -59,7 +61,7 @@ onBeforeUnmount(() => {
 <template>
   <div ref="box" class="mcp" @mousedown.prevent>
     <div class="head">
-      <span class="title">MCPs do projeto</span>
+      <span class="title">{{ global ? "MCPs globais" : "MCPs do projeto" }}</span>
       <span class="config" :title="configDir ?? ''">{{ configDir }}</span>
       <button class="refresh" :class="{ spinning: loading }" title="Verificar de novo" :disabled="loading" @click="emit('refresh')">
         <svg viewBox="0 0 16 16" width="14" height="14"><path d="M13 8a5 5 0 1 1-1.5-3.5M13 3v2.5h-2.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
@@ -69,7 +71,9 @@ onBeforeUnmount(() => {
     <div v-if="error" class="error">{{ error }}</div>
     <ul>
       <li v-if="loading && !servers" class="muted">Verificando os servidores…</li>
-      <li v-else-if="servers && !servers.length" class="muted">Nenhum servidor MCP neste projeto (.mcp.json ou escopo local).</li>
+      <li v-else-if="servers && !servers.length" class="muted">
+        {{ global ? "Nenhum MCP global configurado." : "Nenhum MCP neste projeto (.mcp.json ou escopo local)." }}
+      </li>
       <li v-for="s in sorted" :key="s.name" :class="s.status" :title="s.detail ?? LABEL[s.status]">
         <span class="dot" />
         <div class="text">
@@ -83,6 +87,14 @@ onBeforeUnmount(() => {
     <div class="foot">
       <button v-if="needsAuth" class="auth" title="Digita /mcp no Claude: é lá que ele faz o login dos servidores" @click="emit('authenticate')">
         Autenticar no Claude (/mcp)
+      </button>
+      <button
+        class="scope"
+        :title="global ? 'Volta pros MCPs do projeto' : 'Checa os MCPs do usuário (valem pra todos os projetos; demora mais)'"
+        :disabled="loading"
+        @click="emit('scope', !global)"
+      >
+        {{ global ? "Ver os do projeto" : "Ver os globais" }}
       </button>
       <span class="muted">{{ loading ? "Verificando…" : checked ? `Verificado às ${checked}` : "" }}</span>
     </div>
@@ -235,6 +247,21 @@ li.failed .status {
 .muted {
   color: var(--fg-muted);
   font-size: 11px;
+}
+.scope {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+.scope:hover:not(:disabled) {
+  background: var(--hover);
+}
+.scope:disabled {
+  opacity: 0.5;
 }
 @keyframes spin {
   to {

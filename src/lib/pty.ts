@@ -29,10 +29,12 @@ export interface McpServer {
   target: string;
   status: "connected" | "needs_auth" | "failed" | "unknown";
   detail: string | null;
+  /** Escopo de usuário (pedido pelo botão "Ver os globais"). */
+  global: boolean;
 }
 
-/** MCPs do projeto do Claude da aba (`claude mcp get` com o binário, ambiente e pasta dele). */
-export const claudeMcpList = (id: number) => invoke<McpServer[]>("claude_mcp_list", { id });
+/** MCPs do projeto do Claude da aba, ou os globais (`claude mcp get` com o binário, ambiente e pasta dele). */
+export const claudeMcpList = (id: number, global = false) => invoke<McpServer[]>("claude_mcp_list", { id, global });
 
 export const claudeHooksInstall = (id: number) => invoke<ClaudeHooksStatus>("claude_hooks_install", { id });
 
