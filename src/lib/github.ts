@@ -132,11 +132,19 @@ export async function fetchPullRequest(root: string): Promise<GithubStatus | nul
 }
 
 /** Runs do último commit da branch que tem actions. */
+/**
+ * Eventos que dizem respeito ao código da branch. Workflows de comentário e
+ * review (bots como Claude e CodeRabbit) rodam "em cima" da branch principal,
+ * no último commit dela, e encheriam a barra com coisa que não é deploy/build.
+ */
+const BRANCH_EVENTS = ["push", "workflow_dispatch", "schedule", "release", "workflow_run", "merge_group", "repository_dispatch"];
+
 export async function fetchRuns(root: string, branch: string): Promise<GithubStatus | null> {
   const res = await invoke<GhResult>("gh_runs", { root });
   if (res.kind !== "ok") return fromGh(res);
-  const raw = (JSON.parse(res.json) as (RawCheck & { url: string; headSha: string; headBranch: string })[]).filter(
-    (r) => r.headBranch === branch,
+  type RawRun = RawCheck & { url: string; headSha: string; headBranch: string; event?: string };
+  const raw = (JSON.parse(res.json) as RawRun[]).filter(
+    (r) => r.headBranch === branch && (!r.event || BRANCH_EVENTS.includes(r.event)),
   );
   if (!raw.length) return null;
   // A lista vem do mais novo pro mais antigo; fica só com os runs do commit mais recente.
