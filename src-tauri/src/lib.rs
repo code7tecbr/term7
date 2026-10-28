@@ -1,3 +1,4 @@
+mod clipboard;
 mod claude;
 mod files;
 mod gh;
@@ -37,6 +38,7 @@ pub fn run() {
             update::update_check,
             update::update_install,
             update::update_restart,
+            clipboard::clipboard_write,
         ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o term7");
