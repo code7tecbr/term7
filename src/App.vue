@@ -161,7 +161,7 @@ watch(
   },
 );
 
-// ---- servidores MCP do Claude da aba (claude mcp list) ----
+// ---- servidores MCP do Claude da aba (só os do projeto) ----
 interface McpState {
   servers: McpServer[] | null;
   loading: boolean;

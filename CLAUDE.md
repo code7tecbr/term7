@@ -34,7 +34,7 @@ src-tauri/src/
   pty.rs                  sessões de shell (spawn/write/resize/kill/info via /proc)
   git.rs                  status, ls-files, branches, checkout, fetch, info do repo (usa o binário `git`)
   gh.rs                   PR e runs via `gh`; open_url (xdg-open, só http(s))
-  claude.rs               Claude Code: avisos via hooks (TERM7_PANE) e MCPs da aba (`claude mcp list` com o binário/ambiente do processo)
+  claude.rs               Claude Code: avisos via hooks (TERM7_PANE) e MCPs do projeto da aba (`claude mcp get` com o binário/ambiente do processo)
   files.rs                leitura de arquivo pro visualizador; resolve_paths (caminhos clicáveis)
   session.rs              session.json em ~/.local/share/br.tec.code7.term7/
 ```
