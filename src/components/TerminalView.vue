@@ -7,6 +7,7 @@ import { spawnPty, type PtySession } from "../lib/pty";
 import { attachLinks } from "../lib/links";
 import { attachPathLinks, type PathTarget } from "../lib/paths";
 import { matchShortcut } from "../lib/shortcuts";
+import { attachSuggestions } from "../lib/suggestions";
 import { isTextKey, routeTextInput } from "../lib/textInput";
 import { term7Dark } from "../lib/theme";
 
@@ -16,6 +17,8 @@ const emit = defineEmits<{
   exit: [code: number];
   focus: [];
   openPath: [target: PathTarget];
+  /** Comando sugerido pelo Claude, pra digitar no terminal inferior. */
+  runInPanel: [command: string];
 }>();
 
 const FONT_SIZE = 14;
@@ -95,6 +98,20 @@ function handleClipboard(e: KeyboardEvent, t: Terminal) {
   return false;
 }
 
+/**
+ * Comando sugerido -> prompt do Claude no modo bash: o "!" digitado troca o
+ * modo e o comando vai como colagem, sem Enter (quem confirma é o usuário).
+ */
+function runInClaude(command: string) {
+  if (!session) return;
+  const s = session;
+  s.write("!")
+    .then(() => new Promise((r) => setTimeout(r, 60)))
+    .then(() => s.write(`\x1b[200~${command.replace(/\x1b/g, "")}\x1b[201~`))
+    .catch(() => {});
+  focus();
+}
+
 function focus() {
   nextTick(() => {
     fit.fit();
@@ -129,6 +146,11 @@ onMounted(async () => {
   attachLinks(t);
   // Caminho relativo é resolvido na pasta atual do shell da aba.
   attachPathLinks(t, async () => (await session?.info())?.cwd ?? null, (target) => emit("openPath", target));
+  attachSuggestions(
+    t,
+    () => session?.id,
+    (cmd, target) => (target === "claude" ? runInClaude(cmd) : emit("runInPanel", cmd)),
+  );
   fit.fit();
 
   // Atalhos do app não chegam no shell. Texto (incluindo acentos) não vai pelo

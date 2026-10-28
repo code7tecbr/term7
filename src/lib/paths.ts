@@ -33,7 +33,7 @@ async function resolvePaths(cwd: string | null, candidates: string[]) {
 }
 
 /** Texto de uma linha do buffer, com a célula (x) de cada caractere. */
-function lineText(term: Terminal, y: number) {
+export function lineText(term: Terminal, y: number) {
   const line = term.buffer.active.getLine(y);
   let text = "";
   const xs: number[] = [];
