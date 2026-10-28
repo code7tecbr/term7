@@ -1,11 +1,30 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import type { ChangeKind, GitStatus } from "../lib/git";
-import { closeFile, showTerminal } from "../state/editor";
-import { canPreview, tabTitle, type FileMode, type OpenFile, type Tab } from "../state/tabs";
+import { closeFile, openFile, showTerminal } from "../state/editor";
+import { lines, removeComment } from "../state/review";
+import { canPreview, tabTitle, type FileMode, type OpenFile, type ReviewComment, type Tab } from "../state/tabs";
 
 /** Abas da área principal: o terminal e os arquivos abertos, como no VS Code. */
 const props = defineProps<{ tab: Tab; home: string | null; status: GitStatus | null }>();
+const emit = defineEmits<{ sendReview: [] }>();
+
+const reviewOpen = ref(false);
+
+function goToComment(c: ReviewComment) {
+  openFile({ root: c.root, path: c.path, origPath: null, line: c.from }, props.tab);
+  reviewOpen.value = false;
+}
+
+function send() {
+  reviewOpen.value = false;
+  emit("sendReview");
+}
+
+function discard() {
+  props.tab.review.splice(0);
+  reviewOpen.value = false;
+}
 
 const LETTER: Record<ChangeKind, string> = {
   added: "A",
@@ -73,6 +92,28 @@ const modes = computed(() => {
         <button class="x" title="Fechar (clique do meio)" @click.stop="closeFile(tab, i)">
           <svg viewBox="0 0 16 16" width="11" height="11"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
         </button>
+      </div>
+    </div>
+
+    <div v-if="tab.review.length" class="review">
+      <button class="review-btn" :class="{ open: reviewOpen }" title="Comentários pra mandar pro Claude desta aba" @click="reviewOpen = !reviewOpen">
+        <svg viewBox="0 0 16 16" width="13" height="13"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" /></svg>
+        Revisão · {{ tab.review.length }}
+      </button>
+      <div v-if="reviewOpen" class="review-menu">
+        <ul>
+          <li v-for="c in tab.review" :key="c.id" @click="goToComment(c)">
+            <div class="where">{{ c.path }}:{{ lines(c) }}</div>
+            <div class="text">{{ c.text }}</div>
+            <button class="x" title="Remover" @click.stop="removeComment(tab, c.id)">
+              <svg viewBox="0 0 16 16" width="11" height="11"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
+            </button>
+          </li>
+        </ul>
+        <div class="review-foot">
+          <button @click="discard">Descartar</button>
+          <button class="primary" title="Cola a revisão no prompt do Claude desta aba (sem Enter)" @click="send">Enviar pro Claude</button>
+        </div>
       </div>
     </div>
 
@@ -198,6 +239,96 @@ const modes = computed(() => {
 .x:hover {
   background: var(--active);
   color: var(--fg);
+}
+.review {
+  position: relative;
+  flex-shrink: 0;
+}
+.review-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 1px solid color-mix(in srgb, var(--yellow) 45%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--yellow) 10%, transparent);
+  color: var(--yellow);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.review-btn:hover,
+.review-btn.open {
+  background: color-mix(in srgb, var(--yellow) 20%, transparent);
+}
+.review-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  width: min(420px, 80vw);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.45);
+  font-size: 12px;
+}
+.review-menu ul {
+  max-height: 320px;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  overflow-y: auto;
+}
+.review-menu li {
+  position: relative;
+  padding: 6px 28px 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.review-menu li:hover {
+  background: var(--hover);
+}
+.review-menu li:hover .x {
+  opacity: 1;
+}
+.review-menu .x {
+  position: absolute;
+  top: 6px;
+  right: 4px;
+}
+.where {
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--fg);
+}
+.review-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px;
+  border-top: 1px solid var(--border);
+}
+.review-foot button {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.review-foot button.primary {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
 }
 .modes {
   display: flex;

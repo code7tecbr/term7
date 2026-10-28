@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { basicSetup } from "codemirror";
-import { EditorState, type Extension } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
+import { Compartment, EditorState, RangeSetBuilder, type Extension } from "@codemirror/state";
+import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import { LanguageDescription, syntaxHighlighting } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
 import { unifiedMergeView } from "@codemirror/merge";
@@ -11,10 +11,11 @@ import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { gitShowHead, readTextFile, type GitStatus } from "../lib/git";
 import { openUrl } from "../lib/github";
-import type { OpenFile } from "../state/tabs";
+import { addComment, commentsFor, lines, removeComment } from "../state/review";
+import type { OpenFile, ReviewComment, Tab } from "../state/tabs";
 
 /** Um arquivo aberto na área principal: atual ou com as alterações marcadas. */
-const props = defineProps<{ file: OpenFile; status: GitStatus | null }>();
+const props = defineProps<{ tab: Tab; file: OpenFile; status: GitStatus | null }>();
 
 const host = ref<HTMLDivElement>();
 const note = ref<string | null>(null);
@@ -23,6 +24,100 @@ const preview = ref<{ kind: "md" | "html"; html: string } | null>(null);
 let view: EditorView | undefined;
 
 const active = computed(() => props.file);
+
+// ---- comentários de revisão ----
+/** Linhas selecionadas no editor (o botão "Comentar" aparece com seleção). */
+const selection = ref<{ from: number; to: number } | null>(null);
+/** Caixa de comentário aberta pras linhas selecionadas. */
+const draft = ref<{ from: number; to: number; text: string } | null>(null);
+const draftBox = ref<HTMLTextAreaElement>();
+const comments = computed(() => commentsFor(props.tab, props.file.root, props.file.path));
+const commentsSlot = new Compartment();
+
+const trackSelection = EditorView.updateListener.of((u) => {
+  if (!u.selectionSet && !u.docChanged) return;
+  const sel = u.state.selection.main;
+  if (sel.empty) {
+    selection.value = null;
+    return;
+  }
+  // Seleção que termina no começo de uma linha não inclui essa linha.
+  const end = sel.to > sel.from && u.state.doc.lineAt(sel.to).from === sel.to ? sel.to - 1 : sel.to;
+  selection.value = { from: u.state.doc.lineAt(sel.from).number, to: u.state.doc.lineAt(end).number };
+});
+
+class CommentWidget extends WidgetType {
+  constructor(readonly comment: ReviewComment) {
+    super();
+  }
+  eq(other: CommentWidget) {
+    return other.comment.id === this.comment.id && other.comment.text === this.comment.text;
+  }
+  toDOM() {
+    const box = document.createElement("div");
+    box.className = "cm-review-comment";
+    const text = document.createElement("span");
+    text.textContent = this.comment.text;
+    const remove = document.createElement("button");
+    remove.textContent = "Remover";
+    remove.title = "Tira o comentário da revisão";
+    remove.onmousedown = (e) => e.preventDefault();
+    remove.onclick = () => removeComment(props.tab, this.comment.id);
+    box.append(text, remove);
+    return box;
+  }
+  ignoreEvent() {
+    return true;
+  }
+}
+
+/** Linhas comentadas marcadas e o texto do comentário logo abaixo do trecho. */
+function commentDecorations(): Extension {
+  if (!view) return [];
+  const doc = view.state.doc;
+  const marks: { pos: number; deco: Decoration }[] = [];
+  for (const c of comments.value) {
+    const from = Math.min(c.from, doc.lines);
+    const to = Math.min(c.to, doc.lines);
+    for (let n = from; n <= to; n++) marks.push({ pos: doc.line(n).from, deco: Decoration.line({ class: "cm-commented" }) });
+    marks.push({ pos: doc.line(to).to, deco: Decoration.widget({ widget: new CommentWidget(c), block: true, side: 1 }) });
+  }
+  marks.sort((a, b) => a.pos - b.pos || a.deco.startSide - b.deco.startSide);
+  const builder = new RangeSetBuilder<Decoration>();
+  for (const m of marks) builder.add(m.pos, m.pos, m.deco);
+  return EditorView.decorations.of(builder.finish());
+}
+
+function refreshComments() {
+  view?.dispatch({ effects: commentsSlot.reconfigure(commentDecorations()) });
+}
+watch(comments, refreshComments, { deep: true });
+
+function startComment() {
+  if (!selection.value) return;
+  draft.value = { ...selection.value, text: "" };
+  requestAnimationFrame(() => draftBox.value?.focus());
+}
+
+function saveComment() {
+  const d = draft.value;
+  if (!d || !view || !d.text.trim()) return;
+  const doc = view.state.doc;
+  const code = doc.sliceString(doc.line(d.from).from, doc.line(Math.min(d.to, doc.lines)).to);
+  addComment(props.tab, { root: props.file.root, path: props.file.path, from: d.from, to: d.to, code, text: d.text.trim() });
+  draft.value = null;
+  view.dispatch({ selection: { anchor: view.state.selection.main.head } });
+}
+
+function onDraftKey(e: KeyboardEvent) {
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    saveComment();
+  } else if (e.key === "Escape") {
+    e.preventDefault();
+    draft.value = null;
+  }
+}
 
 const theme = EditorView.theme(
   {
@@ -46,6 +141,31 @@ const theme = EditorView.theme(
     "&.cm-merge-b .cm-changedLineGutter": { background: "var(--green) !important" },
     ".cm-deletedLineGutter": { background: "var(--red) !important" },
     ".cm-collapsedLines": { background: "var(--bg-elevated) !important", color: "var(--fg-muted)" },
+    // Trechos com comentário de revisão.
+    ".cm-commented": { boxShadow: "inset 3px 0 0 var(--yellow)", backgroundColor: "rgb(224 175 104 / 0.08)" },
+    ".cm-review-comment": {
+      display: "flex",
+      alignItems: "flex-start",
+      gap: "10px",
+      margin: "4px 12px 6px 4px",
+      padding: "6px 10px",
+      border: "1px solid rgb(224 175 104 / 0.4)",
+      borderRadius: "6px",
+      background: "var(--bg-elevated)",
+      fontFamily: "var(--font-ui, system-ui)",
+      fontSize: "12.5px",
+      whiteSpace: "pre-wrap",
+    },
+    ".cm-review-comment span": { flex: "1" },
+    ".cm-review-comment button": {
+      border: "0",
+      background: "none",
+      color: "var(--fg-muted)",
+      font: "inherit",
+      fontSize: "11px",
+      cursor: "pointer",
+    },
+    ".cm-review-comment button:hover": { color: "var(--red)" },
   },
   { dark: true },
 );
@@ -101,6 +221,8 @@ async function load() {
     syntaxHighlighting(oneDarkHighlightStyle),
     theme,
     language,
+    trackSelection,
+    commentsSlot.of([]),
   ];
   if (file.mode === "changes") {
     extensions.push(
@@ -118,6 +240,8 @@ async function load() {
   const top = view.scrollDOM.scrollTop;
   view.setState(EditorState.create({ doc: text, extensions }));
   view.dom.dataset.file = `${file.root}/${file.path}`;
+  selection.value = null;
+  refreshComments();
   if (file.line) goToLine(file.line);
   else if (sameFile) requestAnimationFrame(() => view && (view.scrollDOM.scrollTop = top));
 }
@@ -159,7 +283,22 @@ onBeforeUnmount(() => view?.destroy());
     <!-- Fora do repositório (ex.: /tmp/...): mostra o caminho completo. -->
     <div class="path">{{ status?.root === file.root ? file.path : `${file.root}/${file.path}`.replace(/^\/\//, "/") }}</div>
     <div v-if="note" class="note">{{ note }}</div>
-    <div v-show="!preview" ref="host" class="editor" />
+    <div v-show="!preview" class="editor-wrap">
+      <div ref="host" class="editor" />
+      <button v-if="selection && !draft" class="comment-btn" title="Comentar o trecho pra mandar pro Claude desta aba" @mousedown.prevent @click="startComment">
+        <svg viewBox="0 0 16 16" width="13" height="13"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" /></svg>
+        Comentar {{ selection.from === selection.to ? "linha" : "linhas" }} {{ lines(selection) }}
+      </button>
+      <div v-if="draft" class="draft">
+        <div class="draft-head">Comentário · {{ draft.from === draft.to ? "linha" : "linhas" }} {{ lines(draft) }}</div>
+        <textarea ref="draftBox" v-model="draft.text" rows="3" placeholder="O que o Claude deve fazer aqui?" @keydown="onDraftKey" />
+        <div class="draft-foot">
+          <span class="hint">Ctrl+Enter adiciona · Esc cancela</span>
+          <button @click="draft = null">Cancelar</button>
+          <button class="primary" :disabled="!draft.text.trim()" @click="saveComment">Adicionar à revisão</button>
+        </div>
+      </div>
+    </div>
     <!-- eslint-disable-next-line vue/no-v-html -- sanitizado com DOMPurify -->
     <div v-if="preview?.kind === 'md'" class="markdown" @click="onPreviewClick" v-html="preview.html" />
     <!-- HTML num iframe sem scripts e sem acesso ao app (sandbox vazio). -->
@@ -182,6 +321,89 @@ onBeforeUnmount(() => view?.destroy());
   font-family: var(--font-mono);
   font-size: 11.5px;
   border-bottom: 1px solid var(--border);
+}
+.editor-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.comment-btn {
+  position: absolute;
+  top: 8px;
+  right: 16px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid color-mix(in srgb, var(--yellow) 50%, transparent);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  color: var(--yellow);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.35);
+}
+.comment-btn:hover {
+  background: color-mix(in srgb, var(--yellow) 14%, var(--bg-elevated));
+}
+.draft {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+.draft-head {
+  color: var(--yellow);
+  font-size: 12px;
+}
+.draft textarea {
+  resize: vertical;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.draft textarea:focus {
+  border-color: var(--accent);
+}
+.draft-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.draft-foot .hint {
+  flex: 1;
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+.draft-foot button {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.draft-foot button.primary {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.draft-foot button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 .note {
   padding: 8px 12px;
