@@ -162,9 +162,11 @@ watch(
   },
 );
 
-// ---- servidores MCP do Claude da aba (só os do projeto) ----
+// ---- servidores MCP do Claude da aba (os do projeto; os globais só a pedido) ----
 interface McpState {
   servers: McpServer[] | null;
+  /** Mostrando os globais (o usuário pediu, no menu). */
+  global: boolean;
   loading: boolean;
   error: string | null;
   at: number | null;
@@ -175,17 +177,20 @@ const mcpByTab = reactive(new Map<number, McpState>());
 const mcpOpen = ref(false);
 const activeMcp = computed(() => (activeTab.value ? mcpByTab.get(activeTab.value.id) ?? null : null));
 
-async function refreshMcp(tabId: number, maxAge = 0) {
+async function refreshMcp(tabId: number, maxAge = 0, global = mcpByTab.get(tabId)?.global ?? false) {
   const session = sessions.get(tabId);
   const current = mcpByTab.get(tabId);
   if (!session || current?.loading) return;
-  if (current?.at && Date.now() - current.at < maxAge) return;
-  mcpByTab.set(tabId, { servers: current?.servers ?? null, loading: true, error: null, at: current?.at ?? null });
+  const same = current?.global === global;
+  if (same && current?.at && Date.now() - current.at < maxAge) return;
+  // Trocou entre projeto e globais: a lista antiga não vale.
+  const keep = same ? current : undefined;
+  mcpByTab.set(tabId, { servers: keep?.servers ?? null, global, loading: true, error: null, at: keep?.at ?? null });
   try {
-    const servers = await claudeMcpList(session.id);
-    mcpByTab.set(tabId, { servers, loading: false, error: null, at: Date.now() });
+    const servers = await claudeMcpList(session.id, global);
+    mcpByTab.set(tabId, { servers, global, loading: false, error: null, at: Date.now() });
   } catch (err) {
-    mcpByTab.set(tabId, { servers: current?.servers ?? null, loading: false, error: String(err), at: current?.at ?? null });
+    mcpByTab.set(tabId, { servers: keep?.servers ?? null, global, loading: false, error: String(err), at: keep?.at ?? null });
   }
 }
 
@@ -502,7 +507,9 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
       :config-dir="claudeHooks?.settingsPath.replace(/\/settings\.json$/, '').replace(home ?? '\0', '~') ?? null"
       :checked-at="activeMcp?.at ?? null"
       @close="mcpOpen = false"
+      :global="!!activeMcp?.global"
       @refresh="activeTab && refreshMcp(activeTab.id)"
+      @scope="(global: boolean) => activeTab && refreshMcp(activeTab.id, 0, global)"
       @authenticate="authenticateMcp"
     />
 
