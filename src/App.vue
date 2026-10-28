@@ -9,6 +9,7 @@ import FileExplorer from "./components/FileExplorer.vue";
 import EditorTabs from "./components/EditorTabs.vue";
 import BranchPicker from "./components/BranchPicker.vue";
 import McpMenu from "./components/McpMenu.vue";
+import PreviewPopup from "./components/PreviewPopup.vue";
 import { openFile, showTerminal, shownFile } from "./state/editor";
 import { reviewPrompt } from "./state/review";
 import type { PathTarget } from "./lib/paths";
@@ -39,6 +40,8 @@ import {
   store,
   tabTitle,
   togglePanel,
+  canPreview,
+  type OpenFile,
   type Tab,
 } from "./state/tabs";
 
@@ -104,17 +107,30 @@ async function pollSessions() {
 const pollTimer = setInterval(pollSessions, 1000);
 
 // ---- caminhos clicados no terminal: abrem numa aba da área principal ----
+/** Markdown/HTML clicado no terminal: aparece num pop-up, sem abrir aba. */
+const popup = ref<{ tab: Tab; file: OpenFile } | null>(null);
+
 function openPath(tab: Tab, { path, line }: PathTarget) {
   // Dentro do repositório atual: abre relativo à raiz, com o status do git (alterações).
   const root = git.value?.root;
   const inRepo = root && path.startsWith(root + "/");
   const cut = path.lastIndexOf("/");
-  openFile(
-    inRepo
-      ? { root, path: path.slice(root.length + 1), origPath: null, line }
-      : { root: path.slice(0, cut) || "/", path: path.slice(cut + 1), origPath: null, line },
-    tab,
-  );
+  const file = inRepo
+    ? { root, path: path.slice(root.length + 1), origPath: null, line }
+    : { root: path.slice(0, cut) || "/", path: path.slice(cut + 1), origPath: null, line };
+  // Com linha (arquivo.md:42) a ideia é ir ao trecho: abre em aba, no código.
+  if (canPreview(file.path) && !line) {
+    popup.value = { tab, file: reactive({ ...file, mode: "preview" }) };
+    return;
+  }
+  openFile(file, tab);
+}
+
+function popupToTab() {
+  const p = popup.value;
+  if (!p) return;
+  openFile({ ...p.file }, p.tab);
+  popup.value = null;
 }
 
 // ---- avisos do Claude ----
@@ -494,6 +510,14 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
       @toggle-mcp="toggleMcp"
     />
 
+    <PreviewPopup
+      v-if="popup"
+      :tab="popup.tab"
+      :file="popup.file"
+      :status="git"
+      @close="popup = null"
+      @open-tab="popupToTab"
+    />
     <McpMenu
       v-if="mcpOpen && activeTab"
       :servers="activeMcp?.servers ?? null"

@@ -21,7 +21,7 @@ docker compose run --rm --no-deps dev bash -c "cd src-tauri && cargo check"   # 
 ```
 src/
   App.vue                 layout: sidebar | área principal (abas: terminal + arquivos; terminal inferior) | explorador
-  components/             TabSidebar, TerminalView, EditorTabs, FileView (lazy), FileExplorer, BranchPicker, McpMenu, StatusBar, ContextMenu
+  components/             TabSidebar, TerminalView, EditorTabs, FileView (lazy), PreviewPopup, FileExplorer, BranchPicker, McpMenu, StatusBar, ContextMenu
   state/tabs.ts           abas e grupos (store reativo); regra: abas de um grupo são sempre contíguas
   state/session.ts        salva/restaura o layout
   state/editor.ts         arquivos abertos na área principal (cada aba lateral tem os seus)
