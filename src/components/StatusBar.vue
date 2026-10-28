@@ -414,9 +414,11 @@ const totals = computed(() => {
   font-size: 10px;
 }
 .pr.merged {
+  background: color-mix(in srgb, var(--purple) 16%, transparent);
   color: var(--purple);
 }
 .pr.closed {
+  background: color-mix(in srgb, var(--red) 14%, transparent);
   color: var(--red);
 }
 .pr.draft {
