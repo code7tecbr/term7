@@ -25,6 +25,7 @@ src/
   state/tabs.ts           abas e grupos (store reativo); regra: abas de um grupo são sempre contíguas
   state/session.ts        salva/restaura o layout
   state/editor.ts         arquivos abertos na área principal (cada aba lateral tem os seus)
+  state/review.ts         comentários de revisão em trechos de arquivo; vão pro Claude da aba como colagem (sem Enter)
   lib/pty.ts              ponte com o backend (invoke + Channel de bytes brutos)
   lib/git.ts              tipos e chamadas de git
   lib/github.ts           PR, checks e runs (via gh); useGithub.ts faz o polling

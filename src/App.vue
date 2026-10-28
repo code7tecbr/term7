@@ -9,7 +9,8 @@ import FileExplorer from "./components/FileExplorer.vue";
 import EditorTabs from "./components/EditorTabs.vue";
 import BranchPicker from "./components/BranchPicker.vue";
 import McpMenu from "./components/McpMenu.vue";
-import { openFile, shownFile } from "./state/editor";
+import { openFile, showTerminal, shownFile } from "./state/editor";
+import { reviewPrompt } from "./state/review";
 import type { PathTarget } from "./lib/paths";
 
 // O visualizador (CodeMirror) é pesado: só carrega quando abrir o primeiro arquivo.
@@ -221,6 +222,26 @@ async function installClaudeHooks() {
   setTimeout(() => (claudeHooksNote.value = null), 8000);
 }
 
+// ---- revisão: comentários de arquivos mandados pro Claude da aba ----
+async function sendReview(tab: Tab) {
+  const session = sessions.get(tab.id);
+  const fail = (msg: string) => {
+    claudeHooksNote.value = msg;
+    setTimeout(() => (claudeHooksNote.value = null), 8000);
+  };
+  if (!session || tab.process !== "claude") return fail("Abra o Claude no terminal desta aba pra mandar a revisão.");
+  // Colagem "entre colchetes": o Claude recebe como texto colado e não envia sozinho.
+  const text = reviewPrompt(tab).replace(/\x1b/g, "");
+  try {
+    await session.write(`\x1b[200~${text}\x1b[201~`);
+  } catch (err) {
+    return fail(`Não deu pra mandar a revisão: ${err}`);
+  }
+  tab.review.splice(0);
+  showTerminal(tab);
+  tab.focusedPane = "main";
+}
+
 // ---- git / painel de diff ----
 const { status: git, refresh: refreshGit } = useGitStatus(computed(() => activeTab.value?.cwd ?? null));
 const diffOpen = ref(false);
@@ -384,7 +405,7 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
         <!-- Abas inativas ficam escondidas (não desmontadas) pra manter o shell e o scrollback. -->
         <div v-for="tab in store.tabs" :key="tab.id" class="slot" :class="{ active: isActive(tab) }">
           <div class="pane main" :style="{ flexGrow: tab.panelOpen ? 1 - tab.panelHeight : 1 }">
-            <EditorTabs v-if="tab.files.length" :tab="tab" :home="home" :status="git" />
+            <EditorTabs v-if="tab.files.length || tab.review.length" :tab="tab" :home="home" :status="git" @send-review="sendReview(tab)" />
             <div class="layers">
               <div class="layer" :class="{ shown: tab.view === -1 }">
                 <TerminalView
@@ -404,7 +425,7 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
                 :class="{ shown: tab.view === i }"
                 @mousedown="tab.focusedPane = 'main'"
               >
-                <FileView :file="file" :status="git" />
+                <FileView :tab="tab" :file="file" :status="git" />
               </div>
             </div>
           </div>
