@@ -4,6 +4,7 @@ mod gh;
 mod git;
 mod pty;
 mod session;
+mod update;
 
 pub fn run() {
     tauri::Builder::default()
@@ -31,6 +32,9 @@ pub fn run() {
             files::resolve_paths,
             session::session_load,
             session::session_save,
+            update::update_check,
+            update::update_install,
+            update::update_restart,
         ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o term7");
