@@ -10,7 +10,12 @@ const fetchSuggestions = (ptyId: number) => invoke<string[]>("claude_suggestions
 
 // Prefixo mínimo pra reconhecer um comando quebrado na borda da tela.
 const MIN_WRAPPED = 16;
-const WIDTH = 4;
+// Dois botões de 3 colunas e um respiro entre eles.
+const WIDTH = 7;
+
+const PLAY = '<svg viewBox="0 0 16 16" width="11" height="11"><path d="M5 3.5v9l7-4.5z" fill="currentColor"/></svg>';
+const TERMINAL =
+  '<svg viewBox="0 0 16 16" width="12" height="12"><path d="M3 4.5l3.5 3.5L3 11.5M8.5 12h4.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 /** Onde o comando aparece numa linha da tela: coluna logo depois do texto. */
 function findOnLine(text: string, xs: number[], first: string): number | null {
@@ -48,10 +53,10 @@ export function attachSuggestions(term: Terminal, ptyId: () => number | undefine
     }
   }
 
-  function button(label: string, title: string, onClick: () => void) {
+  function button(icon: string, kind: string, title: string, onClick: () => void) {
     const b = document.createElement("button");
-    b.className = "t7-run";
-    b.textContent = label;
+    b.className = `t7-run ${kind}`;
+    b.innerHTML = icon;
     b.title = title;
     // Sem isso o xterm começa uma seleção e o terminal perde o clique.
     b.addEventListener("mousedown", (e) => {
@@ -87,7 +92,10 @@ export function attachSuggestions(term: Terminal, ptyId: () => number | undefine
           if (shown.has(key)) break;
           const marker = term.registerMarker(y - (buf.baseY + buf.cursorY));
           if (!marker) break;
-          const x = Math.min(col + 1, term.cols - WIDTH);
+          // Depois do fim do texto da linha (nunca por cima de uma frase que
+          // continua depois do comando); sem espaço, na borda direita.
+          const end = Math.max(col, xs[text.length - 1] + 1);
+          const x = Math.min(end + 1, term.cols - WIDTH);
           const deco = term.registerDecoration({ marker, x, width: WIDTH, layer: "top" });
           if (!deco) {
             marker.dispose();
@@ -98,8 +106,8 @@ export function attachSuggestions(term: Terminal, ptyId: () => number | undefine
             el.dataset.t7 = "1";
             el.classList.add("t7-run-box");
             el.append(
-              button("▶", `Rodar no Claude (! ${first})`, () => run(cmd, "claude")),
-              button("⤓", "Mandar pro terminal inferior (sem Enter)", () => run(cmd, "panel")),
+              button(PLAY, "claude", `Rodar no Claude: ! ${first}`, () => run(cmd, "claude")),
+              button(TERMINAL, "panel", "Digitar no terminal inferior (sem Enter)", () => run(cmd, "panel")),
             );
           });
           shown.set(key, { marker, deco });
