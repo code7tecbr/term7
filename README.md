@@ -81,6 +81,11 @@ A versão vem só da release: o workflow grava ela no `package.json` antes de co
 mostra no canto direito da barra de status (clicar abre a release). No repositório o `package.json`
 fica em `0.0.0-dev`, então um build local aparece como `dev`.
 
+Quando sai uma release nova, aparece **Atualizar pra vX** ao lado da versão: o term7 baixa o `.deb`
+(via `gh`, o repositório é privado) e instala com `pkexec apt-get`, que pede a senha do sistema.
+Depois o botão vira **Reiniciar** (as abas voltam, mas os programas abertos nelas são encerrados).
+Só aparece na versão instalada pelo apt; o build de teste em `~/.local` não confere.
+
 ## Roadmap
 
 - [x] Abas na lateral, com nome, cor e tag de etapa (discovery, spec, plan, code, review, test, close/merge), também nos grupos; PR mergeado marca a aba com close/merge sozinho

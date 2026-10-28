@@ -30,6 +30,7 @@ src/
   lib/github.ts           PR, checks e runs (via gh); useGithub.ts faz o polling
   lib/links.ts, paths.ts  URLs e caminhos de arquivo clicáveis na saída do terminal
   lib/shortcuts.ts        atalhos globais (o terminal ignora essas teclas)
+  lib/update.ts           confere/instala a versão nova (botão ao lado da versão, na barra)
 src-tauri/src/
   pty.rs                  sessões de shell (spawn/write/resize/kill/info via /proc)
   git.rs                  status, ls-files, branches, checkout, fetch, info do repo (usa o binário `git`)
@@ -37,6 +38,7 @@ src-tauri/src/
   claude.rs               Claude Code: avisos via hooks (TERM7_PANE) e MCPs da aba (`claude mcp list` com o binário/ambiente do processo)
   files.rs                leitura de arquivo pro visualizador; resolve_paths (caminhos clicáveis)
   session.rs              session.json em ~/.local/share/br.tec.code7.term7/
+  update.rs               atualização: última release via `gh api`, baixa o .deb e instala com `pkexec apt-get`
 ```
 
 ## Convenções
