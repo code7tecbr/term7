@@ -1,5 +1,6 @@
 # Uso:
-#   docker compose run --rm build   -> gera o .deb em ./dist-deb/
+#   docker compose run --rm build   -> gera o .deb em ./dist-deb/ (apaga os de builds antigos:
+#                                      o volume do target guardava .deb de outras versões)
 #   docker compose run --rm dev     -> abre o app na sua tela (hot reload)
 
 x-base: &base
@@ -21,7 +22,8 @@ services:
   build:
     <<: *base
     command: >
-      bash -c "npm ci && npx tauri build --bundles deb
+      bash -c "rm -f src-tauri/target/release/bundle/deb/*.deb dist-deb/*.deb
+      && npm ci && npx tauri build --bundles deb
       && mkdir -p dist-deb && cp src-tauri/target/release/bundle/deb/*.deb dist-deb/"
 
   dev:

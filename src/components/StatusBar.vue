@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, ref } from "vue";
 import { getVersion } from "@tauri-apps/api/app";
 import { repoName, type GitStatus } from "../lib/git";
 import { openUrl, overall, type Check, type CheckState, type GithubStatus, type RepoInfo } from "../lib/github";
+import { checkUpdate, installUpdate, restartApp, type UpdateInfo } from "../lib/update";
 import { prettyPath } from "../state/tabs";
 
 const props = defineProps<{
@@ -41,13 +42,55 @@ const open = (url: string) => openUrl(url).catch(() => {});
 const RELEASES = "https://github.com/code7tecbr/term7/releases";
 const version = ref<string | null>(null);
 getVersion()
-  .then((v) => (version.value = v))
+  .then((v) => {
+    version.value = v;
+    refreshUpdate();
+  })
   .catch(() => {});
 const isDev = computed(() => !!version.value?.includes("dev"));
 
 function openRelease() {
   if (version.value) open(isDev.value ? RELEASES : `${RELEASES}/tag/v${version.value}`);
 }
+
+// ---- atualização ----
+// Confere ao abrir e a cada 6 h. Build local ("dev") não confere: não tem pra quê.
+const update = ref<UpdateInfo | null>(null);
+const updating = ref<"idle" | "installing" | "installed">("idle");
+const updateError = ref<string | null>(null);
+
+async function refreshUpdate() {
+  if (!version.value || isDev.value || updating.value !== "idle") return;
+  update.value = await checkUpdate().catch(() => null);
+}
+const updateTimer = setInterval(refreshUpdate, 6 * 60 * 60 * 1000);
+onBeforeUnmount(() => clearInterval(updateTimer));
+
+async function runUpdate() {
+  const u = update.value;
+  if (!u || updating.value === "installing") return;
+  if (updating.value === "installed") return restartApp();
+  updating.value = "installing";
+  updateError.value = null;
+  try {
+    await installUpdate(u.latest);
+    updating.value = "installed";
+  } catch (e) {
+    updating.value = "idle";
+    updateError.value = String(e);
+  }
+}
+
+const updateLabel = computed(() => {
+  if (updating.value === "installing") return "Atualizando…";
+  if (updating.value === "installed") return `Reiniciar na v${update.value?.latest}`;
+  return `Atualizar pra v${update.value?.latest}`;
+});
+const updateTitle = computed(() => {
+  if (updateError.value) return `Não deu certo: ${updateError.value}. Clique pra tentar de novo.`;
+  if (updating.value === "installed") return "Instalada. Reinicia o term7 (as abas voltam, mas os programas abertos nelas são encerrados).";
+  return "Baixa o .deb da release e instala (o sistema pede a senha).";
+});
 
 // Branch no link: cada parte codificada, mas as barras ficam (ex.: feat/x).
 const branchPath = (b: string) => b.split("/").map(encodeURIComponent).join("/");
@@ -204,9 +247,20 @@ const totals = computed(() => {
       </template>
 
       <button
+        v-if="update?.newer && update.installed"
+        class="btn update"
+        :class="{ error: updateError, ready: updating === 'installed' }"
+        :title="updateTitle"
+        :disabled="updating === 'installing'"
+        @click="runUpdate"
+      >
+        <svg viewBox="0 0 16 16" width="12" height="12"><path d="M8 13V3M4 7l4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        {{ updateLabel }}
+      </button>
+      <button
         v-if="version"
         class="btn version"
-        :title="isDev ? 'term7 — build local (fora de uma release)' : `term7 v${version} — ver a release`"
+        :title="isDev ? 'term7 — build local (fora de uma release)' : update?.newer && !update.installed ? `term7 v${version} — a v${update.latest} já saiu (este build não é o do apt)` : `term7 v${version} — ver a release`"
         @click="openRelease"
       >
         {{ isDev ? "dev" : `v${version}` }}
@@ -300,6 +354,20 @@ const totals = computed(() => {
   color: var(--fg);
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+.update {
+  color: var(--accent);
+  font-weight: 600;
+}
+.update.ready {
+  color: var(--green);
+}
+.update.error {
+  color: var(--red);
+}
+.update:disabled {
+  opacity: 0.7;
+  cursor: progress;
 }
 .version {
   font-family: var(--font-mono);

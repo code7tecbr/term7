@@ -336,31 +336,102 @@ fn strip_ansi(s: &str) -> String {
     out
 }
 
-/// Lê a saída do `claude mcp list`: "nome: endereço - ✔ Connected".
-fn parse_mcp_list(output: &str) -> Vec<McpServer> {
-    strip_ansi(output)
-        .lines()
-        .filter_map(|line| {
-            let (name, rest) = line.split_once(": ")?;
-            let (target, status) = rest.rsplit_once(" - ")?;
-            let lower = status.to_lowercase();
-            let (status, detail) = if lower.contains("needs auth") || lower.contains("authenticat") {
-                ("needs_auth", None)
-            } else if lower.contains("connected") && !lower.contains("fail") {
-                ("connected", None)
-            } else if lower.contains("fail") || status.starts_with(['✘', '✗', '×']) {
-                let detail = status.split_once('—').map(|(_, d)| d.trim().to_string());
-                ("failed", detail)
-            } else {
-                ("unknown", Some(status.trim().to_string()))
-            };
-            Some(McpServer { name: name.trim().to_string(), target: safe_target(target), status, detail })
-        })
-        .collect()
+/// Status do Claude ("✔ Connected", "! Needs authentication"...) -> (status, motivo).
+fn classify(status: &str) -> (&'static str, Option<String>) {
+    let status = status.trim();
+    let lower = status.to_lowercase();
+    if lower.contains("needs auth") || lower.contains("authenticat") {
+        ("needs_auth", None)
+    } else if lower.contains("connected") && !lower.contains("fail") {
+        ("connected", None)
+    } else if lower.contains("fail") || status.starts_with(['✘', '✗', '×']) {
+        ("failed", status.split_once('—').map(|(_, d)| d.trim().to_string()))
+    } else {
+        ("unknown", Some(status.to_string()))
+    }
 }
 
-/// Roda `claude mcp list` como o Claude da aba roda: mesmo binário, ambiente e
-/// pasta (pega o CLAUDE_CONFIG_DIR e os MCPs do projeto certos).
+/// Lê a saída do `claude mcp get <nome>`. Só olha Status, URL e Command: os
+/// headers e variáveis de ambiente (onde ficam os tokens) nunca são lidos.
+fn parse_mcp_get(name: &str, output: &str) -> McpServer {
+    let mut status = None;
+    let mut target = String::new();
+    for line in strip_ansi(output).lines() {
+        let line = line.trim();
+        if let Some(v) = line.strip_prefix("Status:") {
+            status = Some(v.trim().to_string());
+        } else if let Some(v) = line.strip_prefix("URL:").or_else(|| line.strip_prefix("Command:")) {
+            target = safe_target(v);
+        }
+    }
+    let (status, detail) = match status {
+        Some(s) => classify(&s),
+        None => ("unknown", Some("o Claude não informou o status".into())),
+    };
+    McpServer { name: name.to_string(), target, status, detail }
+}
+
+/// Nomes dos MCPs do projeto: os do `.mcp.json` e os de escopo local (no
+/// `.claude.json`), na pasta do Claude ou acima dela. Os de usuário e os
+/// conectores do claude.ai ficam de fora: valem pra tudo e demoram pra checar.
+fn project_servers(cwd: &Path, config: &Value, home: Option<&Path>) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    let mut add = |servers: Option<&Value>| {
+        for name in servers.and_then(Value::as_object).into_iter().flat_map(|m| m.keys()) {
+            if !names.contains(name) {
+                names.push(name.clone());
+            }
+        }
+    };
+    for dir in cwd.ancestors() {
+        // A home não é projeto: um .mcp.json nela valeria pra tudo.
+        if Some(dir) == home || dir.parent().is_none() {
+            break;
+        }
+        let key = dir.to_string_lossy();
+        add(config.pointer(&format!("/projects/{}/mcpServers", key.replace('~', "~0").replace('/', "~1"))));
+        if let Ok(text) = std::fs::read_to_string(dir.join(".mcp.json")) {
+            if let Ok(json) = serde_json::from_str::<Value>(&text) {
+                add(json.get("mcpServers"));
+            }
+        }
+    }
+    names
+}
+
+/// Roda o binário do Claude da aba com o ambiente e a pasta dele, com prazo.
+fn run_claude(exe: &Path, cwd: &Path, env: &[(String, String)], args: &[&str], timeout: Duration) -> Result<String, String> {
+    let mut child = std::process::Command::new(exe)
+        .args(args)
+        .current_dir(cwd)
+        .env_clear()
+        .envs(env.iter().cloned())
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    // A checagem conecta no servidor; um travado não pode segurar pra sempre.
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        match child.try_wait().map_err(|e| e.to_string())? {
+            Some(_) => break,
+            None if std::time::Instant::now() > deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err("demorou demais pra responder".into());
+            }
+            None => std::thread::sleep(Duration::from_millis(100)),
+        }
+    }
+    let mut out = String::new();
+    use std::io::Read;
+    child.stdout.take().ok_or("sem saída")?.read_to_string(&mut out).map_err(|e| e.to_string())?;
+    Ok(out)
+}
+
+/// Checa os MCPs do projeto como o Claude da aba faria: mesmo binário,
+/// ambiente (CLAUDE_CONFIG_DIR) e pasta. Um `claude mcp get` por servidor, em paralelo.
 fn mcp_list(foreground: u32) -> Result<Vec<McpServer>, String> {
     let comm = std::fs::read_to_string(format!("/proc/{foreground}/comm")).unwrap_or_default();
     if comm.trim() != "claude" {
@@ -369,41 +440,36 @@ fn mcp_list(foreground: u32) -> Result<Vec<McpServer>, String> {
     let exe = std::fs::read_link(format!("/proc/{foreground}/exe")).map_err(|e| e.to_string())?;
     let cwd = std::fs::read_link(format!("/proc/{foreground}/cwd")).map_err(|e| e.to_string())?;
     let environ = std::fs::read(format!("/proc/{foreground}/environ")).map_err(|e| e.to_string())?;
-    let env = environ.split(|&b| b == 0).filter_map(|var| {
-        let var = std::str::from_utf8(var).ok()?;
-        let (k, v) = var.split_once('=')?;
-        // Sem o TERM7_PANE: um SessionEnd desse comando apagaria o estado da aba.
-        (k != MARKER).then(|| (k.to_string(), v.to_string()))
-    });
+    let env: Vec<(String, String)> = environ
+        .split(|&b| b == 0)
+        .filter_map(|var| {
+            let (k, v) = std::str::from_utf8(var).ok()?.split_once('=')?;
+            // Sem o TERM7_PANE: um SessionEnd desse comando apagaria o estado da aba.
+            (k != MARKER).then(|| (k.to_string(), v.to_string()))
+        })
+        .collect();
+    let var = |name: &str| env.iter().find(|(k, _)| k == name).map(|(_, v)| PathBuf::from(v));
+    let home = var("HOME");
+    let config_file = match var("CLAUDE_CONFIG_DIR") {
+        Some(dir) => dir.join(".claude.json"),
+        None => home.clone().unwrap_or_default().join(".claude.json"),
+    };
+    let config = read_settings(&config_file).unwrap_or(Value::Null);
 
-    let mut child = std::process::Command::new(exe)
-        .args(["mcp", "list"])
-        .current_dir(cwd)
-        .env_clear()
-        .envs(env)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .map_err(|e| e.to_string())?;
-
-    // A checagem conecta em cada servidor; um travado não pode segurar pra sempre.
-    let deadline = std::time::Instant::now() + Duration::from_secs(45);
-    loop {
-        match child.try_wait().map_err(|e| e.to_string())? {
-            Some(_) => break,
-            None if std::time::Instant::now() > deadline => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err("o claude mcp list demorou demais".into());
-            }
-            None => std::thread::sleep(Duration::from_millis(100)),
-        }
-    }
-    let mut out = String::new();
-    use std::io::Read;
-    child.stdout.take().ok_or("sem saída")?.read_to_string(&mut out).map_err(|e| e.to_string())?;
-    Ok(parse_mcp_list(&out))
+    let names = project_servers(&cwd, &config, home.as_deref());
+    let handles: Vec<_> = names
+        .into_iter()
+        .map(|name| {
+            let (exe, cwd, env) = (exe.clone(), cwd.clone(), env.clone());
+            std::thread::spawn(move || {
+                match run_claude(&exe, &cwd, &env, &["mcp", "get", &name], Duration::from_secs(30)) {
+                    Ok(out) => parse_mcp_get(&name, &out),
+                    Err(e) => McpServer { name, target: String::new(), status: "failed", detail: Some(e) },
+                }
+            })
+        })
+        .collect();
+    Ok(handles.into_iter().filter_map(|h| h.join().ok()).collect())
 }
 
 #[tauri::command]
@@ -419,22 +485,36 @@ mod mcp_tests {
     use super::*;
 
     #[test]
-    fn le_a_saida_do_mcp_list() {
-        let out = "Checking MCP server health…\n\n\
-            context7: https://mcp.context7.com/mcp (HTTP) - ✔ Connected\n\
-            paper: http://127.0.0.1:29979/mcp (HTTP) - ✘ Failed to connect — ECONNREFUSED\n\
-            penpot: https://design.penpot.app/mcp/stream?userToken=SEGREDO (HTTP) - ✔ Connected\n\
-            claude.ai Gmail: https://gmailmcp.googleapis.com/mcp/v1 - ! Needs authentication\n\
-            ctx: npx -y @upstash/context7-mcp --api-key SEGREDO - ✔ Connected\n";
-        let s = parse_mcp_list(out);
-        assert_eq!(s.len(), 5);
-        assert_eq!(s[0].status, "connected");
-        assert_eq!(s[1].status, "failed");
-        assert_eq!(s[1].detail.as_deref(), Some("ECONNREFUSED"));
-        assert_eq!(s[2].target, "https://design.penpot.app/mcp/stream (HTTP)");
-        assert_eq!(s[3].name, "claude.ai Gmail");
-        assert_eq!(s[3].status, "needs_auth");
-        assert_eq!(s[4].target, "npx -y");
-        assert!(s.iter().all(|x| !x.target.contains("SEGREDO")));
+    fn le_a_saida_do_mcp_get() {
+        let out = "context7:\n  Scope: Local config\n  Status: ✔ Connected\n  Type: http\n  \
+            URL: https://mcp.context7.com/mcp?key=SEGREDO\n  Headers:\n    Authorization: Bearer SEGREDO\n";
+        let s = parse_mcp_get("context7", out);
+        assert_eq!(s.status, "connected");
+        assert_eq!(s.target, "https://mcp.context7.com/mcp");
+
+        let out = "x:\n  Status: ✘ Failed to connect — ECONNREFUSED\n  Command: npx -y pacote --api-key SEGREDO\n  \
+            Environment:\n    TOKEN=SEGREDO\n";
+        let s = parse_mcp_get("x", out);
+        assert_eq!(s.status, "failed");
+        assert_eq!(s.detail.as_deref(), Some("ECONNREFUSED"));
+        assert_eq!(s.target, "npx -y");
+
+        assert_eq!(parse_mcp_get("y", "y:\n  Status: ! Needs authentication\n").status, "needs_auth");
+    }
+
+    #[test]
+    fn so_os_mcps_do_projeto() {
+        let dir = std::env::temp_dir().join(format!("term7-mcp-{}", std::process::id()));
+        let sub = dir.join("app/src");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(dir.join("app/.mcp.json"), r#"{"mcpServers":{"playwright":{},"local":{}}}"#).unwrap();
+        let app = dir.join("app").to_string_lossy().to_string();
+        let config = json!({
+            "mcpServers": { "global": {} },
+            "projects": { app: { "mcpServers": { "local": {}, "blender": {} } } }
+        });
+        let names = project_servers(&sub, &config, Some(&dir));
+        assert_eq!(names, ["local", "blender", "playwright"]);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

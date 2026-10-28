@@ -60,7 +60,7 @@ function handleShiftEnter(e: KeyboardEvent) {
 }
 
 /**
- * Ctrl+Shift+C / Ctrl+Shift+V, e Ctrl+C com texto selecionado (copia em vez de
+ * Ctrl+Shift+C / Ctrl+V / Ctrl+Shift+V, e Ctrl+C com texto selecionado (copia em vez de
  * mandar a interrupção, como no VS Code). Sem seleção, Ctrl+C segue pro programa.
  * Retorna true se tratou a tecla.
  */
@@ -77,12 +77,18 @@ function handleClipboard(e: KeyboardEvent, t: Terminal) {
     }
     return true;
   }
-  if (key === "v" && e.shiftKey) {
+  if (key === "v") {
     if (e.type === "keydown") {
+      // Ctrl+V sozinho mandava ^V, que no zsh "engole" a próxima tecla e o texto
+      // colado se perdia. Agora cola o texto; sem texto (ex.: imagem copiada),
+      // segue o ^V, que o Claude CLI usa pra colar imagem.
+      const passThrough = () => {
+        if (!e.shiftKey) session?.write("\x16");
+      };
       navigator.clipboard
         .readText()
-        .then((text) => text && t.paste(text))
-        .catch(() => {});
+        .then((text) => (text ? t.paste(text) : passThrough()))
+        .catch(passThrough);
     }
     return true;
   }

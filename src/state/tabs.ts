@@ -45,6 +45,19 @@ export interface OpenFile {
   line?: number;
 }
 
+/** Comentário de revisão num trecho de arquivo, pra mandar pro Claude da aba. */
+export interface ReviewComment {
+  id: number;
+  root: string;
+  path: string;
+  /** Linhas do trecho (1 = primeira), inclusive. */
+  from: number;
+  to: number;
+  /** Código do trecho, como estava ao comentar. */
+  code: string;
+  text: string;
+}
+
 export interface Tab {
   id: number;
   /** Pasta onde o shell nasce. */
@@ -66,6 +79,8 @@ export interface Tab {
   files: OpenFile[];
   /** O que a área principal mostra: -1 = terminal, senão o índice em files. */
   view: number;
+  /** Comentários juntados pra mandar de uma vez pro Claude da aba. */
+  review: ReviewComment[];
   /** Terminal inferior (como no VS Code). */
   panelAlive: boolean;
   panelOpen: boolean;
@@ -92,6 +107,7 @@ function makeTab(fields: Partial<Tab>): Tab {
     tag: null,
     files: [],
     view: -1,
+    review: [],
     panelAlive: false,
     panelOpen: false,
     panelHeight: 0.35,
