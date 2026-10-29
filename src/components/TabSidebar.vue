@@ -51,7 +51,8 @@ const sections = computed<Section[]>(() => {
   return out;
 });
 
-const stripe = (tab: Tab) => tab.color ?? findGroup(tab.groupId)?.color ?? "transparent";
+/** Faixa da aba ativa: na cor dela, senão na do grupo, senão a de destaque. */
+const stripe = (tab: Tab) => tab.color ?? findGroup(tab.groupId)?.color ?? "var(--accent)";
 const isClaude = (tab: Tab) => tab.process === "claude";
 
 /** Grupo recolhido herda o aviso mais forte das abas dele, pra não esconder um pedido. */
@@ -514,7 +515,7 @@ section.group {
   font-size: 11px;
   font-weight: 500;
 }
-/* Abas do grupo ficam recuadas com uma linha na cor do grupo. */
+/* Abas do grupo ficam recuadas; a faixa colorida marca só a aba ativa. */
 section.group .tab {
   margin: 1px 4px 1px 10px;
 }
@@ -541,6 +542,10 @@ section.group > .tab:first-of-type {
   bottom: 8px;
   width: 3px;
   border-radius: 2px;
+}
+.tab.active::before {
+  top: 6px;
+  bottom: 6px;
   background: var(--stripe);
 }
 .tab:hover {

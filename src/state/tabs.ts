@@ -7,9 +7,11 @@ export const COLORS = ["#7aa2f7", "#9ece6a", "#e0af68", "#f7768e", "#bb9af7", "#
 export const TAGS = [
   { id: "discovery", label: "discovery", color: "#ff9e64" },
   { id: "spec", label: "spec", color: "#7dcfff" },
+  { id: "design", label: "design", color: "#ff79c6" },
   { id: "plan", label: "plan", color: "#73daca" },
   { id: "code", label: "code", color: "#7aa2f7" },
   { id: "review", label: "review", color: "#e0af68" },
+  { id: "rework", label: "rework", color: "#f7768e" },
   { id: "test", label: "test", color: "#9ece6a" },
   { id: "merge", label: "close/merge", color: "#bb9af7" },
 ] as const;
