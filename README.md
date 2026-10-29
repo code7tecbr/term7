@@ -86,9 +86,35 @@ Quando sai uma release nova, aparece **Atualizar pra vX** ao lado da versão: o 
 Depois o botão vira **Reiniciar** (as abas voltam, mas os programas abertos nelas são encerrados).
 Só aparece na versão instalada pelo apt; o build de teste em `~/.local` não confere.
 
+## Ditado por voz e anexos
+
+O microfone da barra de cima grava, transcreve e cola o texto no terminal com o foco (sem Enter).
+Numa aba com o Claude CLI, ele digita `/voice`, o ditado do próprio Claude (Enter liga; depois
+segure Espaço pra falar). A transcrição é configurada na engrenagem:
+
+- **Serviço externo:** qualquer API compatível com a da OpenAI. A Groq já vem preenchida
+  (`whisper-large-v3-turbo`); a chave fica em `~/.local/share/br.tec.code7.term7/settings.json`,
+  com permissão 600, e não volta pra interface depois de salva.
+- **Local:** o `whisper-cli` do [whisper.cpp](https://github.com/ggml-org/whisper.cpp) com um modelo
+  `.bin` baixado (o `small` vai bem em português). Nada sai da máquina.
+
+A gravação usa o `pw-record` (PipeWire) ou o `arecord`. O clipe da barra abre o seletor de arquivos
+e cola os caminhos no terminal; arrastar arquivos pra janela faz o mesmo no terminal em que caem.
+
+## Modo anônimo
+
+O olho da barra de cima embaralha todo o texto da tela, pra gravar sem expor nada: terminal (com
+ou sem o Claude), arquivos, abas, barras, menus e o título da janela. As letras e os números passam
+a desenhar outros caracteres, então a tela parece texto normal, mas não dá pra ler. Várias letras
+usam o mesmo desenho, então também não dá pra decifrar pela gravação. O conteúdo não muda:
+desligou, volta na hora. Imagens não são embaralhadas.
+
+A fonte (`src/assets/term7-anon.woff2`) é gerada a partir da DejaVu Sans Mono por
+`scripts/anon-font.py`.
+
 ## Roadmap
 
-- [x] Abas na lateral, com nome, cor e tag de etapa (discovery, spec, plan, code, review, test, close/merge), também nos grupos; PR mergeado marca a aba com close/merge sozinho
+- [x] Abas na lateral, com nome, cor e tag de etapa (discovery, spec, design, plan, code, review, rework, test, close/merge), também nos grupos; PR mergeado marca a aba com close/merge sozinho
 - [x] Grupos de abas (nome, cor, recolher) e arrastar/soltar
 - [x] Sessão restaurada ao reabrir (abas, grupos, pastas)
 - [x] Terminal inferior por aba (`Ctrl+'`)

@@ -68,3 +68,19 @@ html, body, #app {
 .t7-run:active {
   transform: scale(0.94);
 }
+
+/* Modo anônimo: a fonte embaralhada vale pra tudo (o terminal troca pela opção do xterm). */
+@font-face {
+  font-family: "term7 Anon";
+  src: url("./assets/term7-anon.woff2") format("woff2");
+  font-display: block;
+}
+.app.anon,
+.app.anon * {
+  font-family: "term7 Anon", var(--font-mono) !important;
+}
+/* O botão do modo continua legível (não tem nada sensível nele). */
+.app.anon .anon-safe,
+.app.anon .anon-safe * {
+  font-family: system-ui, sans-serif !important;
+}

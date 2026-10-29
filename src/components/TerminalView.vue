@@ -10,6 +10,7 @@ import { matchShortcut } from "../lib/shortcuts";
 import { attachSuggestions } from "../lib/suggestions";
 import { isTextKey, routeTextInput } from "../lib/textInput";
 import { term7Dark } from "../lib/theme";
+import { anon, anonFontReady, ANON_FONT } from "../state/anon";
 
 const props = defineProps<{ cwd: string | null; focused: boolean }>();
 const emit = defineEmits<{
@@ -28,6 +29,7 @@ let term: Terminal | undefined;
 let session: PtySession | undefined;
 let observer: ResizeObserver | undefined;
 const fit = new FitAddon();
+let stopAnon: (() => void) | undefined;
 
 function loadWebgl(t: Terminal) {
   try {
@@ -148,9 +150,12 @@ onMounted(async () => {
   const fontFamily = getComputedStyle(document.documentElement).getPropertyValue("--font-mono").trim();
   await loadFont(fontFamily);
 
+  if (anon.value) await anonFontReady();
+  // Modo anônimo: a fonte embaralhada na frente; ícones (Nerd Font) caem na de sempre.
+  const familyFor = (on: boolean) => (on ? `${ANON_FONT}, ${fontFamily}` : fontFamily);
   const t = new Terminal({
     theme: term7Dark,
-    fontFamily,
+    fontFamily: familyFor(anon.value),
     fontSize: FONT_SIZE,
     lineHeight: 1.2,
     cursorBlink: true,
@@ -173,6 +178,12 @@ onMounted(async () => {
     (cmd, target) => (target === "claude" ? runInClaude(cmd) : emit("runInPanel", cmd)),
   );
   fit.fit();
+  // Criado depois de um await: o Vue não para sozinho na desmontagem.
+  stopAnon = watch(anon, async (on) => {
+    if (on) await anonFontReady();
+    t.options.fontFamily = familyFor(on);
+    fit.fit();
+  });
 
   // Atalhos do app não chegam no shell. Texto (incluindo acentos) não vai pelo
   // keydown: chega pelo routeTextInput, a partir do que o sistema digitou.
@@ -200,6 +211,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  stopAnon?.();
   observer?.disconnect();
   session?.kill();
   term?.dispose();

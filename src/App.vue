@@ -11,6 +11,10 @@ import BranchPicker from "./components/BranchPicker.vue";
 import McpMenu from "./components/McpMenu.vue";
 import TopBar from "./components/TopBar.vue";
 import AgentsMenu from "./components/AgentsMenu.vue";
+import SettingsPanel from "./components/SettingsPanel.vue";
+import { pickFiles, shellQuote, voiceCancel, voiceStart, voiceStop } from "./lib/settings";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { anon } from "./state/anon";
 import PreviewPopup from "./components/PreviewPopup.vue";
 import { openFile, showTerminal, shownFile } from "./state/editor";
 import { reviewPrompt } from "./state/review";
@@ -91,9 +95,10 @@ watch(
   (n) => ready.value && n === 0 && getCurrentWindow().close(),
 );
 
+// O título da janela aparece fora da página (barra do sistema, alt-tab): no modo anônimo fica só "term7".
 watch(
-  () => activeTab.value && tabTitle(activeTab.value, home.value),
-  (title) => getCurrentWindow().setTitle(title ? `${title} — term7` : "term7").catch(() => {}),
+  () => [activeTab.value && tabTitle(activeTab.value, home.value), anon.value] as const,
+  ([title, hidden]) => getCurrentWindow().setTitle(title && !hidden ? `${title} — term7` : "term7").catch(() => {}),
 );
 
 // Pasta atual, processo e estado do Claude de cada aba (do terminal principal).
@@ -338,6 +343,82 @@ function typeInPanel(text: string) {
   else panelInput.set(tab.id, text);
 }
 
+// ---- ditado por voz e anexos: vão pro terminal com o foco na aba ativa ----
+function flash(msg: string) {
+  claudeHooksNote.value = msg;
+  setTimeout(() => claudeHooksNote.value === msg && (claudeHooksNote.value = null), 8000);
+}
+
+/** Sessão do terminal com o foco na aba ativa (o principal ou o de baixo). */
+function focusedSession(pane = activeTab.value?.focusedPane) {
+  const tab = activeTab.value;
+  if (!tab) return undefined;
+  return pane === "panel" && tab.panelOpen ? panelSessions.get(tab.id) : sessions.get(tab.id);
+}
+
+/** Colagem "entre colchetes": o shell ou o Claude recebe como texto colado, sem executar. */
+function pasteInto(session: PtySession | undefined, text: string) {
+  if (!session || !text) return;
+  session.write(`\x1b[200~${text.replace(/\x1b/g, "")}\x1b[201~`).catch(() => {});
+}
+
+const settingsOpen = ref(false);
+const voice = ref<"idle" | "recording" | "transcribing">("idle");
+const voiceSecs = ref(0);
+let voiceTimer: ReturnType<typeof setInterval> | undefined;
+/** Fixado no começo da gravação: trocar o foco enquanto fala não muda o destino. */
+let voiceTarget: PtySession | undefined;
+
+const claudeFocused = computed(() => activeTab.value?.process === "claude" && activeTab.value.focusedPane !== "panel");
+const voiceTitle = computed(() =>
+  claudeFocused.value ? "Ditado do Claude: digita /voice (Enter liga; depois segure Espaço pra falar)" : "Ditar: clique, fale e clique de novo",
+);
+
+async function toggleVoice() {
+  if (voice.value === "recording") {
+    clearInterval(voiceTimer);
+    voice.value = "transcribing";
+    try {
+      pasteInto(voiceTarget, await voiceStop());
+    } catch (err) {
+      flash(`Ditado: ${err}`);
+    } finally {
+      voice.value = "idle";
+    }
+    return;
+  }
+  if (voice.value !== "idle") return;
+  if (claudeFocused.value) {
+    // O Claude tem o ditado dele; o Enter fica com o usuário, como no /mcp.
+    sessions.get(activeTab.value!.id)?.write("/voice").catch(() => {});
+    return;
+  }
+  voiceTarget = focusedSession();
+  try {
+    await voiceStart();
+  } catch (err) {
+    return flash(`Ditado: ${err}`);
+  }
+  voice.value = "recording";
+  voiceSecs.value = 0;
+  voiceTimer = setInterval(() => voiceSecs.value++, 1000);
+}
+
+async function attachFiles() {
+  const target = focusedSession();
+  const files = await pickFiles().catch((err) => (flash(`Anexar: ${err}`), []));
+  if (files.length) pasteInto(target, files.map(shellQuote).join(" ") + " ");
+}
+
+// Arquivo arrastado pra janela: cola o caminho no terminal em que caiu.
+const unlistenDrop = getCurrentWebview().onDragDropEvent((e) => {
+  if (e.payload.type !== "drop" || !e.payload.paths.length) return;
+  const { x, y } = e.payload.position;
+  const el = document.elementFromPoint(x / devicePixelRatio, y / devicePixelRatio);
+  const pane = el?.closest(".pane.bottom") ? "panel" : el?.closest(".pane") ? "main" : undefined;
+  pasteInto(focusedSession(pane), e.payload.paths.map(shellQuote).join(" ") + " ");
+});
+
 function githubLogin() {
   typeInPanel("gh auth login");
   // Depois do login o PR aparece sozinho na próxima consulta; ao voltar pra janela, consulta já.
@@ -441,13 +522,16 @@ onBeforeUnmount(() => {
   window.removeEventListener("blur", onWindowBlur);
   clearInterval(pollTimer);
   clearInterval(agentsTimer);
+  clearInterval(voiceTimer);
+  if (voice.value === "recording") voiceCancel().catch(() => {});
+  unlistenDrop.then((off) => off());
 });
 
 const isActive = (tab: Tab) => tab.id === store.activeId;
 </script>
 
 <template>
-  <div class="app">
+  <div class="app" :class="{ anon }">
     <TopBar
       :title="(activeTab && tabTitle(activeTab, home)) ?? ''"
       :claude="activeTab?.process === 'claude'"
@@ -456,7 +540,15 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
       :mcp="activeTab?.process === 'claude' ? activeMcp : null"
       :mcp-open="mcpOpen"
       @toggle-agents="agentsOpen = !agentsOpen"
+      :voice="voice"
+      :voice-secs="voiceSecs"
+      :voice-title="voiceTitle"
       @toggle-mcp="toggleMcp"
+      @voice="toggleVoice"
+      @attach="attachFiles"
+      :anon="anon"
+      @settings="settingsOpen = true"
+      @toggle-anon="anon = !anon"
     />
     <div class="body">
       <TabSidebar :home="home" :style="{ width: sidebarWidth + 'px' }" />
@@ -561,6 +653,7 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
       @close="popup = null"
       @open-tab="popupToTab"
     />
+    <SettingsPanel v-if="settingsOpen" @close="settingsOpen = false" />
     <AgentsMenu v-if="agentsOpen && agents?.length" :agents="agents" @close="agentsOpen = false" />
     <McpMenu
       v-if="mcpOpen && activeTab"

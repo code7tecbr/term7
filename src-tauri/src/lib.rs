@@ -6,12 +6,15 @@ mod gh;
 mod git;
 mod pty;
 mod session;
+mod settings;
 mod suggest;
 mod update;
+mod voice;
 
 pub fn run() {
     tauri::Builder::default()
         .manage(pty::PtyState::default())
+        .manage(voice::VoiceState::default())
         .invoke_handler(tauri::generate_handler![
             pty::pty_spawn,
             pty::pty_write,
@@ -35,6 +38,12 @@ pub fn run() {
             agents::claude_agents,
             files::read_text_file,
             files::resolve_paths,
+            files::pick_files,
+            settings::settings_load,
+            settings::settings_save,
+            voice::voice_start,
+            voice::voice_stop,
+            voice::voice_cancel,
             session::session_load,
             session::session_save,
             update::update_check,
