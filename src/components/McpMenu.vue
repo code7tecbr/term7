@@ -105,7 +105,7 @@ onBeforeUnmount(() => {
 .mcp {
   position: fixed;
   right: 10px;
-  bottom: 32px;
+  top: 32px;
   z-index: 150;
   display: flex;
   flex-direction: column;
