@@ -1,3 +1,4 @@
+mod agents;
 mod clipboard;
 mod claude;
 mod files;
@@ -31,6 +32,7 @@ pub fn run() {
             claude::claude_hooks_install,
             claude::claude_mcp_list,
             suggest::claude_suggestions,
+            agents::claude_agents,
             files::read_text_file,
             files::resolve_paths,
             session::session_load,

@@ -9,6 +9,8 @@ import FileExplorer from "./components/FileExplorer.vue";
 import EditorTabs from "./components/EditorTabs.vue";
 import BranchPicker from "./components/BranchPicker.vue";
 import McpMenu from "./components/McpMenu.vue";
+import TopBar from "./components/TopBar.vue";
+import AgentsMenu from "./components/AgentsMenu.vue";
 import PreviewPopup from "./components/PreviewPopup.vue";
 import { openFile, showTerminal, shownFile } from "./state/editor";
 import { reviewPrompt } from "./state/review";
@@ -17,9 +19,11 @@ import type { PathTarget } from "./lib/paths";
 // O visualizador (CodeMirror) é pesado: só carrega quando abrir o primeiro arquivo.
 const FileView = defineAsyncComponent(() => import("./components/FileView.vue"));
 import {
+  claudeAgents,
   claudeHooksInstall,
   claudeHooksStatus,
   claudeMcpList,
+  type Agent,
   type ClaudeHooksStatus,
   type ClaudeState,
   type McpServer,
@@ -226,10 +230,34 @@ function authenticateMcp() {
     activeTab.value.focusedPane = "main";
   }
 }
-// Fechou o Claude ou trocou de aba: o menu não faz mais sentido.
+// ---- subagentes do Claude da aba ativa (menu "Agentes" da barra de cima) ----
+const agents = ref<Agent[] | null>(null);
+const agentsOpen = ref(false);
+let agentsAt = 0;
+
+/** Rápido com o menu aberto ou agente rodando; senão, de vez em quando (pra o botão aparecer). */
+async function pollAgents() {
+  const tab = activeTab.value;
+  const session = tab && sessions.get(tab.id);
+  if (tab?.process !== "claude" || !session) {
+    agents.value = null;
+    return;
+  }
+  const busy = agentsOpen.value || agents.value?.some((a) => a.status === "running");
+  if (!busy && Date.now() - agentsAt < 10_000) return;
+  agentsAt = Date.now();
+  agents.value = await claudeAgents(session.id).catch(() => agents.value);
+}
+const agentsTimer = setInterval(pollAgents, 2000);
 watch(
   () => [activeTab.value?.id, activeTab.value?.process],
-  () => activeTab.value?.process !== "claude" && (mcpOpen.value = false),
+  () => ((agents.value = null), (agentsAt = 0), pollAgents()),
+);
+
+// Fechou o Claude ou trocou de aba: os menus não fazem mais sentido.
+watch(
+  () => [activeTab.value?.id, activeTab.value?.process],
+  () => activeTab.value?.process !== "claude" && ((mcpOpen.value = false), (agentsOpen.value = false)),
 );
 
 async function installClaudeHooks() {
@@ -412,6 +440,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("focus", onWindowFocus);
   window.removeEventListener("blur", onWindowBlur);
   clearInterval(pollTimer);
+  clearInterval(agentsTimer);
 });
 
 const isActive = (tab: Tab) => tab.id === store.activeId;
@@ -419,6 +448,16 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
 
 <template>
   <div class="app">
+    <TopBar
+      :title="(activeTab && tabTitle(activeTab, home)) ?? ''"
+      :claude="activeTab?.process === 'claude'"
+      :agents="agents"
+      :agents-open="agentsOpen"
+      :mcp="activeTab?.process === 'claude' ? activeMcp : null"
+      :mcp-open="mcpOpen"
+      @toggle-agents="agentsOpen = !agentsOpen"
+      @toggle-mcp="toggleMcp"
+    />
     <div class="body">
       <TabSidebar :home="home" :style="{ width: sidebarWidth + 'px' }" />
       <div class="resizer" @pointerdown.prevent="resizeSidebar" />
@@ -507,15 +546,11 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
       :claude-hooks-missing="activeTab?.process === 'claude' && claudeHooks?.installed === false"
       :claude-hooks-path="claudeHooks?.settingsPath ?? null"
       :note="claudeHooksNote"
-      :mcp="activeTab?.process === 'claude' ? activeMcp : null"
-      :mcp-available="activeTab?.process === 'claude'"
-      :mcp-open="mcpOpen"
       @toggle-diff="diffOpen = !diffOpen"
       @toggle-panel="togglePanel"
       @pick-branch="pickerOpen = !pickerOpen"
       @github-login="githubLogin"
       @install-claude-hooks="installClaudeHooks"
-      @toggle-mcp="toggleMcp"
     />
 
     <PreviewPopup
@@ -526,6 +561,7 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
       @close="popup = null"
       @open-tab="popupToTab"
     />
+    <AgentsMenu v-if="agentsOpen && agents?.length" :agents="agents" @close="agentsOpen = false" />
     <McpMenu
       v-if="mcpOpen && activeTab"
       :servers="activeMcp?.servers ?? null"
