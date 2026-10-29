@@ -21,10 +21,11 @@ docker compose run --rm --no-deps dev bash -c "cd src-tauri && cargo check"   # 
 ```
 src/
   App.vue                 layout: sidebar | área principal (abas: terminal + arquivos; terminal inferior) | explorador
-  components/             TabSidebar, TerminalView, EditorTabs, FileView (lazy), PreviewPopup, FileExplorer, BranchPicker, TopBar (Claude: agentes e MCP), AgentsMenu, McpMenu, StatusBar (pasta, git, PR), ContextMenu
+  components/             TabSidebar, TerminalView, EditorTabs, FileView (lazy), PreviewPopup, FileExplorer, BranchPicker, TopBar (Claude: agentes e MCP; microfone, anexo, configurações), AgentsMenu, SettingsPanel, McpMenu, StatusBar (pasta, git, PR), ContextMenu
   state/tabs.ts           abas e grupos (store reativo); regra: abas de um grupo são sempre contíguas
   state/session.ts        salva/restaura o layout
   state/editor.ts         arquivos abertos na área principal (cada aba lateral tem os seus)
+  state/anon.ts           modo anônimo (gravar tela): troca a fonte de tudo pela embaralhada de src/assets (gerada por scripts/anon-font.py)
   state/review.ts         comentários de revisão em trechos de arquivo; vão pro Claude da aba como colagem (sem Enter)
   lib/pty.ts              ponte com o backend (invoke + Channel de bytes brutos)
   lib/git.ts              tipos e chamadas de git
@@ -32,6 +33,7 @@ src/
   lib/links.ts, paths.ts  URLs e caminhos de arquivo clicáveis na saída do terminal
   lib/shortcuts.ts        atalhos globais (o terminal ignora essas teclas)
   lib/suggestions.ts      botões ▶/⤓ ao lado dos comandos que o Claude sugeriu (procura o texto na tela)
+  lib/settings.ts         configurações, ditado (voice_*) e seletor de arquivos; shellQuote dos caminhos colados
   lib/update.ts           confere/instala a versão nova (botão ao lado da versão, na barra)
 src-tauri/src/
   pty.rs                  sessões de shell (spawn/write/resize/kill/info via /proc)
@@ -42,6 +44,8 @@ src-tauri/src/
   agents.rs               subagentes do Claude da aba: lê <sessão>/subagents/agent-*.meta.json e .jsonl
   clipboard.rs            cópia pedida pelo terminal (OSC 52) via GTK: o WebKit recusa writeText fora de clique/tecla
   files.rs                leitura de arquivo pro visualizador; resolve_paths (caminhos clicáveis)
+  settings.rs             settings.json (600); a chave da API de transcrição nunca volta pro frontend
+  voice.rs                ditado: pw-record/arecord -> API compatível com a OpenAI (curl, chave pelo stdin) ou whisper.cpp
   session.rs              session.json em ~/.local/share/br.tec.code7.term7/
   update.rs               atualização: última release via `gh api`, baixa o .deb e instala com `pkexec apt-get`
 ```

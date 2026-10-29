@@ -61,3 +61,29 @@ pub async fn resolve_paths(cwd: Option<String>, candidates: Vec<String>) -> Resu
     .await
     .map_err(|e| e.to_string())
 }
+
+/// Seletor de arquivos do sistema (pelo portal no Wayland), pra anexar no terminal.
+#[tauri::command]
+pub async fn pick_files(app: tauri::AppHandle) -> Result<Vec<String>, String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    // O GTK só pode ser usado na thread principal.
+    app.run_on_main_thread(move || {
+        use gtk::prelude::*;
+        let dialog = gtk::FileChooserNative::new(
+            Some("Anexar arquivos"),
+            None::<&gtk::Window>,
+            gtk::FileChooserAction::Open,
+            Some("Anexar"),
+            Some("Cancelar"),
+        );
+        dialog.set_select_multiple(true);
+        let files = if dialog.run() == gtk::ResponseType::Accept {
+            dialog.filenames().into_iter().filter_map(|p| p.to_str().map(str::to_string)).collect()
+        } else {
+            Vec::new()
+        };
+        let _ = tx.send(files);
+    })
+    .map_err(|e| e.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || rx.recv().unwrap_or_default()).await.map_err(|e| e.to_string())
+}
