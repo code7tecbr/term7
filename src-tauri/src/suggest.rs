@@ -27,12 +27,12 @@ const MAX_COMMANDS: usize = 120;
 /// Builtins do shell que não estão no PATH mas são comando de verdade.
 const BUILTINS: &[&str] = &["cd", "export", "source", "unset", "alias"];
 
-struct Proc {
-    cwd: PathBuf,
-    env: HashMap<String, String>,
+pub(crate) struct Proc {
+    pub(crate) cwd: PathBuf,
+    pub(crate) env: HashMap<String, String>,
 }
 
-fn read_proc(pid: u32) -> Option<Proc> {
+pub(crate) fn read_proc(pid: u32) -> Option<Proc> {
     let comm = std::fs::read_to_string(format!("/proc/{pid}/comm")).ok()?;
     if comm.trim() != "claude" {
         return None;
@@ -61,7 +61,7 @@ fn project_slug(cwd: &str) -> String {
 }
 
 /// Histórico da sessão desse processo do Claude.
-fn transcript(pid: u32, proc: &Proc) -> Option<PathBuf> {
+pub(crate) fn transcript(pid: u32, proc: &Proc) -> Option<PathBuf> {
     let config = config_dir(&proc.env)?;
     let info: Value = serde_json::from_str(&std::fs::read_to_string(config.join(format!("sessions/{pid}.json"))).ok()?).ok()?;
     let id = info.get("sessionId")?.as_str()?;

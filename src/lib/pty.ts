@@ -74,3 +74,21 @@ export async function spawnPty(opts: SpawnOptions): Promise<PtySession> {
 
 /** Grava na área de transferência pelo lado nativo (funciona sem clique/tecla recente). */
 export const clipboardWrite = (text: string) => invoke<void>("clipboard_write", { text });
+
+export type AgentStatus = "running" | "done" | "stalled";
+/** Subagente do Claude da aba (lido dos arquivos que o Claude grava). */
+export interface Agent {
+  id: string;
+  kind: string;
+  description: string;
+  model: string | null;
+  background: boolean;
+  status: AgentStatus;
+  started: string | null;
+  updated: string | null;
+  context_tokens: number;
+  output_tokens: number;
+  tool_calls: number;
+  last_tool: string | null;
+}
+export const claudeAgents = (id: number) => invoke<Agent[]>("claude_agents", { id });

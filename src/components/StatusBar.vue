@@ -19,22 +19,8 @@ const props = defineProps<{
   claudeHooksPath: string | null;
   /** Mensagem temporária (ex.: resultado de ativar os avisos). */
   note: string | null;
-  /** MCPs do Claude da aba ativa (só quando o Claude está rodando nela). */
-  mcp: { servers: { status: string }[] | null; loading: boolean } | null;
-  mcpAvailable: boolean;
-  mcpOpen: boolean;
 }>();
-defineEmits<{ toggleDiff: []; togglePanel: []; pickBranch: []; githubLogin: []; installClaudeHooks: []; toggleMcp: [] }>();
-
-const mcpCounts = computed(() => {
-  const servers = props.mcp?.servers ?? [];
-  return {
-    total: servers.length,
-    ok: servers.filter((s) => s.status === "connected").length,
-    auth: servers.filter((s) => s.status === "needs_auth").length,
-    failed: servers.filter((s) => s.status === "failed").length,
-  };
-});
+defineEmits<{ toggleDiff: []; togglePanel: []; pickBranch: []; githubLogin: []; installClaudeHooks: [] }>();
 
 const open = (url: string) => openUrl(url).catch(() => {});
 
@@ -171,22 +157,6 @@ const totals = computed(() => {
 
     <div class="right" @mousedown.prevent>
       <span v-if="note" class="note">{{ note }}</span>
-      <button
-        v-if="mcpAvailable"
-        class="btn mcp"
-        data-mcp-toggle
-        :class="{ open: mcpOpen }"
-        title="Servidores MCP do Claude desta aba"
-        @click="$emit('toggleMcp')"
-      >
-        <span class="mcp-label">MCP</span>
-        <template v-if="mcp?.servers">
-          <span class="mcp-ok">{{ mcpCounts.ok }}/{{ mcpCounts.total }}</span>
-          <span v-if="mcpCounts.auth" class="mcp-auth" title="Precisam de autenticação">⚠ {{ mcpCounts.auth }}</span>
-          <span v-if="mcpCounts.failed" class="mcp-failed" title="Falharam">✕ {{ mcpCounts.failed }}</span>
-        </template>
-        <span v-else-if="mcp?.loading" class="clean">…</span>
-      </button>
       <button
         v-if="!note && claudeHooksMissing"
         class="btn claude"
@@ -339,19 +309,6 @@ const totals = computed(() => {
 }
 .claude {
   color: var(--claude);
-}
-.mcp-label {
-  font-weight: 600;
-  letter-spacing: 0.04em;
-}
-.mcp-ok {
-  color: var(--green);
-}
-.mcp-auth {
-  color: var(--yellow);
-}
-.mcp-failed {
-  color: var(--red);
 }
 .note {
   max-width: 420px;
