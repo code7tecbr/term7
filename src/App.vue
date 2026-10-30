@@ -3,6 +3,7 @@ import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, reactive, r
 import { homeDir } from "@tauri-apps/api/path";
 import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
 import TerminalView from "./components/TerminalView.vue";
+import ChatView from "./components/ChatView.vue";
 import TabSidebar from "./components/TabSidebar.vue";
 import StatusBar from "./components/StatusBar.vue";
 import FileExplorer from "./components/FileExplorer.vue";
@@ -12,6 +13,7 @@ import McpMenu from "./components/McpMenu.vue";
 import TopBar from "./components/TopBar.vue";
 import AgentsMenu from "./components/AgentsMenu.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
+import { chatInputs, chatStop } from "./lib/chat";
 import { loadSettings, pickFiles, shellQuote, voiceCancel, voiceStart, voiceStop } from "./lib/settings";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { anon } from "./state/anon";
@@ -355,17 +357,60 @@ function flash(msg: string) {
   setTimeout(() => claudeHooksNote.value === msg && (claudeHooksNote.value = null), 8000);
 }
 
-/** Sessão do terminal com o foco na aba ativa (o principal ou o de baixo). */
-function focusedSession(pane = activeTab.value?.focusedPane) {
+/** Onde o texto colado pelo app vai: um terminal, ou a caixa de texto do chat. */
+type PasteTarget = PtySession | ((text: string) => void);
+
+/** Terminal com o foco na aba ativa (o principal ou o de baixo); no modo chat, a caixa de texto. */
+function focusedSession(pane = activeTab.value?.focusedPane): PasteTarget | undefined {
   const tab = activeTab.value;
   if (!tab) return undefined;
-  return pane === "panel" && tab.panelOpen ? panelSessions.get(tab.id) : sessions.get(tab.id);
+  if (pane === "panel" && tab.panelOpen) return panelSessions.get(tab.id);
+  return (tab.chat && chatInputs.get(tab.id)) || sessions.get(tab.id);
 }
 
 /** Colagem "entre colchetes": o shell ou o Claude recebe como texto colado, sem executar. */
-function pasteInto(session: PtySession | undefined, text: string) {
-  if (!session || !text) return;
-  session.write(`\x1b[200~${text.replace(/\x1b/g, "")}\x1b[201~`).catch(() => {});
+function pasteInto(target: PasteTarget | undefined, text: string) {
+  if (!target || !text) return;
+  if (typeof target === "function") return target(text);
+  target.write(`\x1b[200~${text.replace(/\x1b/g, "")}\x1b[201~`).catch(() => {});
+}
+
+/** Modo chat (experimental), ligado nas Configurações. */
+const chatEnabled = ref(false);
+loadSettings()
+  .then((s) => (chatEnabled.value = s.claude_chat))
+  .catch(() => {});
+
+/** Botão da barra: escondido, "Chat" (Claude rodando no terminal) ou "Terminal" (no chat). */
+const chatButton = computed(() => {
+  const tab = activeTab.value;
+  if (tab?.chat) return "on";
+  return chatEnabled.value && tab?.process === "claude" ? "off" : null;
+});
+
+async function toggleChat() {
+  const tab = activeTab.value;
+  if (!tab) return;
+  if (tab.chat) return leaveChat(tab);
+  if (!sessions.get(tab.id)) return;
+  agentsOpen.value = false;
+  mcpOpen.value = false;
+  tab.chat = { id: null, sessionId: null };
+}
+
+/** Fecha o chat e retoma a mesma conversa no terminal. */
+async function leaveChat(tab: Tab) {
+  const chat = tab.chat;
+  if (!chat) return;
+  // Os dois não podem escrever na mesma sessão: espera o do chat sair antes.
+  if (chat.id !== null) await chatStop(chat.id).catch(() => {});
+  tab.chat = null;
+  if (chat.sessionId) sessions.get(tab.id)?.write(`claude --resume ${chat.sessionId}\r`).catch(() => {});
+}
+
+function onChatFailed(tab: Tab, message: string) {
+  tab.chat = null;
+  flash(`Chat: ${message}`);
 }
 
 const settingsOpen = ref(false);
@@ -373,7 +418,7 @@ const voice = ref<"idle" | "recording" | "transcribing">("idle");
 const voiceSecs = ref(0);
 let voiceTimer: ReturnType<typeof setInterval> | undefined;
 /** Fixado no começo da gravação: trocar o foco enquanto fala não muda o destino. */
-let voiceTarget: PtySession | undefined;
+let voiceTarget: PasteTarget | undefined;
 
 
 async function toggleVoice() {
@@ -550,6 +595,8 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
       @voice="toggleVoice"
       @attach="attachFiles"
       :anon="anon"
+      :chat="chatButton"
+      @toggle-chat="toggleChat"
       @settings="settingsOpen = true"
       @toggle-anon="anon = !anon"
     />
@@ -566,12 +613,23 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
               <div class="layer" :class="{ shown: tab.view === -1 }">
                 <TerminalView
                   :cwd="tab.initialCwd"
-                  :focused="isActive(tab) && tab.focusedPane === 'main' && tab.view === -1"
+                  :focused="isActive(tab) && tab.focusedPane === 'main' && tab.view === -1 && !tab.chat"
                   @focus="tab.focusedPane = 'main'"
                   @spawned="sessions.set(tab.id, $event)"
                   @open-path="openPath(tab, $event)"
                   @run-in-panel="typeInPanel($event)"
                   @exit="onExit(tab.id)"
+                />
+                <ChatView
+                  v-if="tab.chat && sessions.get(tab.id)"
+                  :tab-id="tab.id"
+                  :pty-id="sessions.get(tab.id)!.id"
+                  :home="home"
+                  :focused="isActive(tab) && tab.focusedPane === 'main' && tab.view === -1"
+                  @mousedown="tab.focusedPane = 'main'"
+                  @started="(id, sessionId) => tab.chat && Object.assign(tab.chat, { id, sessionId })"
+                  @failed="onChatFailed(tab, $event)"
+                  @back="leaveChat(tab)"
                 />
               </div>
               <!-- Arquivos ficam montados (escondidos) pra manter a rolagem ao trocar de aba. -->
@@ -656,7 +714,7 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
       @close="popup = null"
       @open-tab="popupToTab"
     />
-    <SettingsPanel v-if="settingsOpen" @close="settingsOpen = false" />
+    <SettingsPanel v-if="settingsOpen" @close="settingsOpen = false" @chat="chatEnabled = $event" />
     <AgentsMenu
       v-if="agentsOpen && agents?.length"
       :agents="agents"

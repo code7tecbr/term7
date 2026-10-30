@@ -93,6 +93,8 @@ export interface Tab {
   panelHeight: number;
   panelCwd: string | null;
   focusedPane: "main" | "panel";
+  /** Modo chat do Claude ligado nesta aba (não é salvo: ao reabrir, volta o terminal). */
+  chat: { id: number | null; sessionId: string | null } | null;
 }
 
 export type SavedTab = Pick<Tab, "cwd" | "groupId"> &
@@ -118,6 +120,7 @@ function makeTab(fields: Partial<Tab>): Tab {
     panelHeight: 0.35,
     panelCwd: null,
     focusedPane: "main",
+    chat: null,
     ...fields,
   };
 }

@@ -14,8 +14,10 @@ const props = defineProps<{
   voice: "idle" | "recording" | "transcribing";
   voiceSecs: number;
   anon: boolean;
+  /** Modo chat: null = botão escondido (desligado nas Configurações ou sem Claude na aba). */
+  chat: "off" | "on" | null;
 }>();
-defineEmits<{ toggleAgents: []; toggleMcp: []; voice: []; attach: []; settings: []; toggleAnon: [] }>();
+defineEmits<{ toggleAgents: []; toggleMcp: []; voice: []; attach: []; settings: []; toggleAnon: []; toggleChat: [] }>();
 
 const clock = computed(() => `${Math.floor(props.voiceSecs / 60)}:${String(props.voiceSecs % 60).padStart(2, "0")}`);
 
@@ -57,6 +59,17 @@ const mcpCounts = computed(() => {
           <span v-if="mcpCounts.failed" class="failed" title="Falharam">✕ {{ mcpCounts.failed }}</span>
         </template>
         <span v-else-if="mcp?.loading" class="muted">…</span>
+      </button>
+      <button
+        v-if="chat"
+        class="btn chat-toggle"
+        :class="{ open: chat === 'on' }"
+        :title="chat === 'on' ? 'Volta pro Claude no terminal, na mesma conversa' : 'Modo chat (experimental): mostra esta conversa do Claude como chat'"
+        @click="$emit('toggleChat')"
+      >
+        <svg v-if="chat === 'on'" viewBox="0 0 16 16" width="13" height="13"><rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3" /><path d="m4.5 6.5 2 1.5-2 1.5M8 10h3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        <svg v-else viewBox="0 0 16 16" width="13" height="13"><path d="M2.5 3.5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1H7l-3 2.5V11h-.5a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" /></svg>
+        <span class="label">{{ chat === "on" ? "Terminal" : "Chat" }}</span>
       </button>
       <span class="sep" />
       <button class="btn icon" title="Anexar arquivos: cola os caminhos no terminal ativo (ou arraste os arquivos pra ele)" @click="$emit('attach')">
