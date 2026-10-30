@@ -182,7 +182,7 @@ pub async fn claude_agents(state: State<'_, PtyState>, id: u32) -> Result<Vec<Ag
 #[derive(Serialize, Clone)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Step {
-    /// O pedido que o agente recebeu.
+    /// O pedido que o agente recebeu (no chat, cada mensagem do usuário).
     Prompt { text: String },
     Text { text: String },
     Tool {
@@ -265,7 +265,23 @@ fn result_text(content: &Value) -> String {
     }
 }
 
-fn steps(jsonl: &str) -> Vec<Step> {
+/// Texto escrito pelo usuário; os `<system-reminder>`, `<command-name>` etc. são do próprio Claude.
+fn user_text(content: &Value) -> Option<String> {
+    let text = match content {
+        Value::String(s) => s.clone(),
+        Value::Array(items) => items
+            .iter()
+            .filter(|i| i.get("type").and_then(Value::as_str) == Some("text"))
+            .filter_map(|i| i.get("text").and_then(Value::as_str))
+            .filter(|t| !t.trim_start().starts_with('<'))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        _ => return None,
+    };
+    (!text.trim().is_empty() && !text.trim_start().starts_with('<')).then_some(text)
+}
+
+pub(crate) fn steps(jsonl: &str) -> Vec<Step> {
     let mut out: Vec<Step> = Vec::new();
     // tool_use_id -> posição do passo, pra encaixar o resultado que vem depois.
     let mut pending: HashMap<String, usize> = HashMap::new();
@@ -277,12 +293,13 @@ fn steps(jsonl: &str) -> Vec<Step> {
         }
         let Some(content) = d.pointer("/message/content") else { continue };
         match d.get("type").and_then(Value::as_str) {
-            Some("user") => match content {
-                // Texto do "usuário" é o pedido; os <system-reminder> são do próprio Claude.
-                Value::String(s) if !s.trim_start().starts_with('<') && !out.iter().any(|st| matches!(st, Step::Prompt { .. })) => {
-                    out.push(Step::Prompt { text: clip(s, MAX_TEXT) })
+            Some("user") => {
+                // Mensagens geradas pelo Claude (resumo de compactação, saída de comando) não são do usuário.
+                let meta = d.get("isMeta").and_then(Value::as_bool).unwrap_or(false) || d.get("isCompactSummary").and_then(Value::as_bool).unwrap_or(false);
+                if let Some(text) = user_text(content).filter(|_| !meta) {
+                    out.push(Step::Prompt { text: clip(&text, MAX_TEXT) });
                 }
-                Value::Array(items) => {
+                if let Value::Array(items) = content {
                     for i in items {
                         if i.get("type").and_then(Value::as_str) != Some("tool_result") {
                             continue;
@@ -294,8 +311,7 @@ fn steps(jsonl: &str) -> Vec<Step> {
                         }
                     }
                 }
-                _ => {}
-            },
+            }
             Some("assistant") => {
                 for c in content.as_array().into_iter().flatten() {
                     match c.get("type").and_then(Value::as_str) {
@@ -370,6 +386,7 @@ mod tests {
     fn monta_os_passos() {
         let jsonl = r#"{"type":"user","message":{"content":"Revise o código"}}
 {"type":"user","message":{"content":"<system-reminder>x</system-reminder>"}}
+{"type":"user","isMeta":true,"message":{"content":"Caveat: gerado pelo Claude"}}
 {"type":"assistant","cwd":"/proj","message":{"content":[{"type":"thinking","thinking":""},{"type":"text","text":"Vou ler."},{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"/proj/src/a.rs"}}]}}
 {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","is_error":true,"content":[{"type":"text","text":"não existe"}]}]}}
 {"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"ls /proj/src","description":"Lista os fontes"}}]}}"#;
