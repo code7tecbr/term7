@@ -4,6 +4,7 @@ import { homeDir } from "@tauri-apps/api/path";
 import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
 import TerminalView from "./components/TerminalView.vue";
 import ChatView from "./components/ChatView.vue";
+import CloseConfirm from "./components/CloseConfirm.vue";
 import TabSidebar from "./components/TabSidebar.vue";
 import StatusBar from "./components/StatusBar.vue";
 import FileExplorer from "./components/FileExplorer.vue";
@@ -51,6 +52,7 @@ import {
   openPanel,
   store,
   tabTitle,
+  SHELLS,
   togglePanel,
   canPreview,
   isReadable,
@@ -80,9 +82,43 @@ watch(snapshot, (data) => {
   saveTimer = setTimeout(() => saveSession(data).catch(() => {}), 400);
 });
 
+/** Programas rodando nas abas (fora o shell), lidos na hora: o polling só cobre o terminal principal. */
+async function runningPrograms() {
+  const items: { tab: string; what: string }[] = [];
+  const isProgram = (p: string | null | undefined): p is string => !!p && !SHELLS.has(p);
+  for (const tab of store.tabs) {
+    const title = tabTitle(tab, home.value);
+    if (tab.chat) items.push({ tab: title, what: "claude (chat)" });
+    const main = await sessions.get(tab.id)?.info().catch(() => null);
+    if (isProgram(main?.process)) items.push({ tab: title, what: main.process });
+    const panel = await panelSessions.get(tab.id)?.info().catch(() => null);
+    if (isProgram(panel?.process)) items.push({ tab: `${title} (terminal de baixo)`, what: panel.process });
+  }
+  return items;
+}
+
+/** Aviso aberto antes de fechar; null = fechado. */
+const closePrompt = ref<{ tab: string; what: string }[] | null>(null);
+/** Já confirmado (ou nada rodando): o próximo pedido de fechar passa direto. */
+let closeConfirmed = false;
+
+function confirmClose() {
+  closePrompt.value = null;
+  closeConfirmed = true;
+  getCurrentWindow().close();
+}
+
 // Salva uma última vez e congela: os shells morrendo no fechamento não podem
 // apagar as abas da sessão salva.
-getCurrentWindow().onCloseRequested(async () => {
+getCurrentWindow().onCloseRequested(async (event) => {
+  if (!closeConfirmed) {
+    const running = await runningPrograms();
+    if (running.length) {
+      event.preventDefault();
+      closePrompt.value = running;
+      return;
+    }
+  }
   clearTimeout(saveTimer);
   await saveSession().catch(() => {});
   closing = true;
@@ -714,6 +750,7 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
       @close="popup = null"
       @open-tab="popupToTab"
     />
+    <CloseConfirm v-if="closePrompt" :items="closePrompt" @cancel="closePrompt = null" @confirm="confirmClose" />
     <SettingsPanel v-if="settingsOpen" @close="settingsOpen = false" @chat="chatEnabled = $event" />
     <AgentsMenu
       v-if="agentsOpen && agents?.length"

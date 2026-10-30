@@ -469,7 +469,7 @@ export function setGroupColor(groupId: number, color: string) {
 
 // ---- títulos ----
 
-const SHELLS = new Set(["zsh", "bash", "fish", "sh", "dash", "nu", "pwsh"]);
+export const SHELLS = new Set(["zsh", "bash", "fish", "sh", "dash", "nu", "pwsh"]);
 
 export function prettyPath(path: string, home: string | null) {
   if (home && (path === home || path.startsWith(home + "/"))) return "~" + path.slice(home.length);
