@@ -4,7 +4,7 @@ import type { Agent } from "../lib/pty";
 
 /** Subagentes do Claude da aba: rodando, terminados e interrompidos. */
 const props = defineProps<{ agents: Agent[] }>();
-const emit = defineEmits<{ close: [] }>();
+const emit = defineEmits<{ close: []; open: [id: string] }>();
 
 const box = ref<HTMLDivElement>();
 // Relógio pro tempo dos que estão rodando andar entre uma leitura e outra.
@@ -66,7 +66,7 @@ onBeforeUnmount(() => {
       <span class="muted">{{ running ? `${running} rodando · ` : "" }}{{ agents.length }} na sessão</span>
     </div>
     <ul>
-      <li v-for="a in agents" :key="a.id" :class="a.status" :title="a.description">
+      <li v-for="a in agents" :key="a.id" :class="a.status" :title="`${a.description}\nClique pra ver o que ele está fazendo`" @click="emit('open', a.id)">
         <span class="dot" />
         <div class="text">
           <span class="name">{{ a.description || a.kind }}</span>
@@ -128,6 +128,9 @@ li {
   gap: 10px;
   padding: 6px 8px;
   border-radius: 6px;
+}
+li {
+  cursor: pointer;
 }
 li:hover {
   background: var(--hover);

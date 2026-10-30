@@ -92,3 +92,10 @@ export interface Agent {
   last_tool: string | null;
 }
 export const claudeAgents = (id: number) => invoke<Agent[]>("claude_agents", { id });
+
+/** Um passo do subagente: o pedido, o que ele escreveu ou uma ferramenta (result null = rodando). */
+export type AgentStep =
+  | { kind: "prompt"; text: string }
+  | { kind: "text"; text: string }
+  | { kind: "tool"; name: string; summary: string; result: string | null; error: boolean };
+export const claudeAgentSteps = (id: number, agent: string) => invoke<AgentStep[]>("claude_agent_steps", { id, agent });
