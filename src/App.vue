@@ -12,7 +12,7 @@ import McpMenu from "./components/McpMenu.vue";
 import TopBar from "./components/TopBar.vue";
 import AgentsMenu from "./components/AgentsMenu.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
-import { pickFiles, shellQuote, voiceCancel, voiceStart, voiceStop } from "./lib/settings";
+import { loadSettings, pickFiles, shellQuote, voiceCancel, voiceStart, voiceStop } from "./lib/settings";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { anon } from "./state/anon";
 import PreviewPopup from "./components/PreviewPopup.vue";
@@ -369,10 +369,6 @@ let voiceTimer: ReturnType<typeof setInterval> | undefined;
 /** Fixado no começo da gravação: trocar o foco enquanto fala não muda o destino. */
 let voiceTarget: PtySession | undefined;
 
-const claudeFocused = computed(() => activeTab.value?.process === "claude" && activeTab.value.focusedPane !== "panel");
-const voiceTitle = computed(() =>
-  claudeFocused.value ? "Ditado do Claude: digita /voice (Enter liga; depois segure Espaço pra falar)" : "Ditar: clique, fale e clique de novo",
-);
 
 async function toggleVoice() {
   if (voice.value === "recording") {
@@ -388,10 +384,12 @@ async function toggleVoice() {
     return;
   }
   if (voice.value !== "idle") return;
-  if (claudeFocused.value) {
-    // O Claude tem o ditado dele; o Enter fica com o usuário, como no /mcp.
-    sessions.get(activeTab.value!.id)?.write("/voice").catch(() => {});
-    return;
+  // Sem configuração a gravação seria jogada fora no fim: avisa antes de gravar.
+  const { voice: v, has_api_key } = await loadSettings();
+  const missing = v.engine === "api" ? !has_api_key && "a chave da API" : !v.local_model && "o modelo do whisper.cpp";
+  if (missing) {
+    settingsOpen.value = true;
+    return flash(`Ditado: falta ${missing}`);
   }
   voiceTarget = focusedSession();
   try {
@@ -542,7 +540,6 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
       @toggle-agents="agentsOpen = !agentsOpen"
       :voice="voice"
       :voice-secs="voiceSecs"
-      :voice-title="voiceTitle"
       @toggle-mcp="toggleMcp"
       @voice="toggleVoice"
       @attach="attachFiles"

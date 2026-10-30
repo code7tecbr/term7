@@ -67,8 +67,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
         <section>
           <h2>Ditado por voz</h2>
           <p class="hint">
-            O microfone da barra de cima grava, transcreve e cola o texto no terminal ativo (sem Enter). Numa aba com o Claude,
-            ele usa o <code>/voice</code> do próprio Claude.
+            O microfone da barra de cima grava, transcreve e cola o texto no terminal ativo, inclusive no Claude (sem Enter).
           </p>
 
           <div class="engines">
