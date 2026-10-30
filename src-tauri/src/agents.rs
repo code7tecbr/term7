@@ -149,10 +149,14 @@ fn agent(meta_path: &Path) -> Option<Agent> {
     })
 }
 
+fn subagents_dir(pid: u32) -> Option<PathBuf> {
+    let proc = suggest::read_proc(pid)?;
+    Some(suggest::transcript(pid, &proc)?.with_extension("").join("subagents"))
+}
+
 fn agents(pid: u32) -> Vec<Agent> {
-    let Some(proc) = suggest::read_proc(pid) else { return Vec::new() };
-    let Some(transcript) = suggest::transcript(pid, &proc) else { return Vec::new() };
-    let Ok(entries) = std::fs::read_dir(transcript.with_extension("").join("subagents")) else { return Vec::new() };
+    let Some(dir) = subagents_dir(pid) else { return Vec::new() };
+    let Ok(entries) = std::fs::read_dir(dir) else { return Vec::new() };
     let mut list: Vec<Agent> = entries
         .filter_map(Result::ok)
         .map(|e| e.path())
@@ -174,6 +178,148 @@ pub async fn claude_agents(state: State<'_, PtyState>, id: u32) -> Result<Vec<Ag
     tauri::async_runtime::spawn_blocking(move || agents(fg)).await.map_err(|e| e.to_string())
 }
 
+/// Um passo do agente, pro popup de detalhe.
+#[derive(Serialize, Clone)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Step {
+    /// O pedido que o agente recebeu.
+    Prompt { text: String },
+    Text { text: String },
+    Tool {
+        name: String,
+        /// O essencial do pedido: o comando, o arquivo, o padrão buscado.
+        summary: String,
+        /// Começo do resultado; None enquanto a ferramenta roda.
+        result: Option<String>,
+        error: bool,
+    },
+}
+
+const MAX_STEPS: usize = 300;
+const MAX_TEXT: usize = 4000;
+const MAX_RESULT: usize = 800;
+
+fn clip(s: &str, max: usize) -> String {
+    let s = s.trim();
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let mut out: String = s.chars().take(max).collect();
+    out.push_str(" …");
+    out
+}
+
+/// O campo que diz o que a ferramenta foi fazer; nas desconhecidas, o JSON todo.
+fn tool_summary(name: &str, input: &Value) -> String {
+    let field = |k: &str| input.get(k).and_then(Value::as_str);
+    let main = match name {
+        "Bash" => field("command"),
+        "Read" | "Edit" | "Write" | "NotebookEdit" => field("file_path").or(field("notebook_path")),
+        "Grep" | "Glob" => field("pattern"),
+        "WebFetch" => field("url"),
+        "WebSearch" => field("query"),
+        "Agent" | "Task" => field("description"),
+        "Skill" => field("skill"),
+        _ => None,
+    };
+    clip(&main.map(str::to_string).unwrap_or_else(|| input.to_string()), 600)
+}
+
+fn result_text(content: &Value) -> String {
+    match content {
+        Value::String(s) => s.clone(),
+        Value::Array(items) => items
+            .iter()
+            .map(|i| match i.get("type").and_then(Value::as_str) {
+                Some("text") => i.get("text").and_then(Value::as_str).unwrap_or("").to_string(),
+                Some(other) => format!("[{other}]"),
+                None => String::new(),
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+        _ => String::new(),
+    }
+}
+
+fn steps(jsonl: &str) -> Vec<Step> {
+    let mut out: Vec<Step> = Vec::new();
+    // tool_use_id -> posição do passo, pra encaixar o resultado que vem depois.
+    let mut pending: HashMap<String, usize> = HashMap::new();
+    for line in jsonl.lines() {
+        let Ok(d) = serde_json::from_str::<Value>(line) else { continue };
+        let Some(content) = d.pointer("/message/content") else { continue };
+        match d.get("type").and_then(Value::as_str) {
+            Some("user") => match content {
+                // Texto do "usuário" é o pedido; os <system-reminder> são do próprio Claude.
+                Value::String(s) if !s.trim_start().starts_with('<') && !out.iter().any(|st| matches!(st, Step::Prompt { .. })) => {
+                    out.push(Step::Prompt { text: clip(s, MAX_TEXT) })
+                }
+                Value::Array(items) => {
+                    for i in items {
+                        if i.get("type").and_then(Value::as_str) != Some("tool_result") {
+                            continue;
+                        }
+                        let id = i.get("tool_use_id").and_then(Value::as_str).unwrap_or("");
+                        if let Some(Step::Tool { result, error, .. }) = pending.remove(id).and_then(|n| out.get_mut(n)) {
+                            *result = Some(clip(&result_text(i.get("content").unwrap_or(&Value::Null)), MAX_RESULT));
+                            *error = i.get("is_error").and_then(Value::as_bool).unwrap_or(false);
+                        }
+                    }
+                }
+                _ => {}
+            },
+            Some("assistant") => {
+                for c in content.as_array().into_iter().flatten() {
+                    match c.get("type").and_then(Value::as_str) {
+                        Some("text") => {
+                            let text = c.get("text").and_then(Value::as_str).unwrap_or("");
+                            if !text.trim().is_empty() {
+                                out.push(Step::Text { text: clip(text, MAX_TEXT) });
+                            }
+                        }
+                        Some("tool_use") => {
+                            let name = c.get("name").and_then(Value::as_str).unwrap_or("?").to_string();
+                            let summary = tool_summary(&name, c.get("input").unwrap_or(&Value::Null));
+                            if let Some(id) = c.get("id").and_then(Value::as_str) {
+                                pending.insert(id.to_string(), out.len());
+                            }
+                            out.push(Step::Tool { name, summary, result: None, error: false });
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    // Mantém o pedido e os passos mais recentes.
+    if out.len() > MAX_STEPS {
+        let has_prompt = matches!(out.first(), Some(Step::Prompt { .. }));
+        let cut = out.len() - MAX_STEPS + usize::from(has_prompt);
+        out.drain(usize::from(has_prompt)..cut);
+    }
+    out
+}
+
+/// Linha do tempo de um subagente da aba.
+#[tauri::command]
+pub async fn claude_agent_steps(state: State<'_, PtyState>, id: u32, agent: String) -> Result<Vec<Step>, String> {
+    // O id vira nome de arquivo: nada de "/" ou "..".
+    if agent.is_empty() || !agent.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return Err("agente inválido".into());
+    }
+    let Some(fg) = crate::pty::foreground_pid(&state, id) else { return Ok(Vec::new()) };
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(dir) = subagents_dir(fg) else { return Ok(Vec::new()) };
+        match std::fs::read_to_string(dir.join(format!("agent-{agent}.jsonl"))) {
+            Ok(text) => Ok(steps(&text)),
+            Err(e) => Err(format!("não consegui ler o histórico do agente: {e}")),
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -190,5 +336,20 @@ mod tests {
         assert_eq!((p.context_tokens, p.output_tokens, p.tool_calls), (2103, 150, 1));
         assert_eq!(p.last_tool.as_deref(), Some("Read"));
         assert!(p.ended);
+    }
+
+    #[test]
+    fn monta_os_passos() {
+        let jsonl = r#"{"type":"user","message":{"content":"Revise o código"}}
+{"type":"user","message":{"content":"<system-reminder>x</system-reminder>"}}
+{"type":"assistant","message":{"content":[{"type":"thinking","thinking":""},{"type":"text","text":"Vou ler."},{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"/a.rs"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","is_error":true,"content":[{"type":"text","text":"não existe"}]}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"ls"}}]}}"#;
+        let s = steps(jsonl);
+        assert_eq!(s.len(), 4);
+        assert!(matches!(&s[0], Step::Prompt { text } if text == "Revise o código"));
+        assert!(matches!(&s[1], Step::Text { text } if text == "Vou ler."));
+        assert!(matches!(&s[2], Step::Tool { name, summary, result: Some(r), error: true } if name == "Read" && summary == "/a.rs" && r == "não existe"));
+        assert!(matches!(&s[3], Step::Tool { summary, result: None, .. } if summary == "ls"));
     }
 }
