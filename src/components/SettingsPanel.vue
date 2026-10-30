@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import type { ClaudeUsage } from "../lib/pty";
 import { loadSettings, saveSettings, setChatMode, VOICE_PRESETS, type VoiceSettings } from "../lib/settings";
 
 /** Configurações do term7: modo chat do Claude e ditado por voz. */
-const emit = defineEmits<{ close: []; chat: [enabled: boolean] }>();
+defineProps<{ usage: ClaudeUsage | null }>();
+const emit = defineEmits<{ close: []; chat: [enabled: boolean]; usage: [enabled: boolean] }>();
 
 /** Liga na hora, sem o "Salvar": é só um interruptor. */
 const chat = ref(false);
@@ -94,6 +96,15 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
             </span>
           </label>
           <p v-if="chatStatus" class="status error">{{ chatStatus }}</p>
+          <div class="usage-row">
+            <span class="hint">
+              <b>Uso na barra de cima</b> (5h, 7d e o do Fable nas contas Max):
+              <template v-if="!usage">abra o Claude na aba pra ver ou mudar.</template>
+              <template v-else-if="usage.installed">ativado em <code>{{ usage.settings_path }}</code>.</template>
+              <template v-else>desativado. Ative pelo botão “Uso” na barra de cima.</template>
+            </span>
+            <button v-if="usage?.installed" type="button" class="secondary" @click="emit('usage', false)">Desativar</button>
+          </div>
         </section>
 
         <section>
@@ -308,6 +319,15 @@ input.short {
   gap: 6px;
 }
 .key input {
+  flex: 1;
+}
+.usage-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+.usage-row .hint {
   flex: 1;
 }
 .switch {

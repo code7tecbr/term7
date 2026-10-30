@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import type { Agent } from "../lib/pty";
+import type { Agent, ClaudeUsage, UsageWindow } from "../lib/pty";
 
 /** Barra de cima: o que é do Claude da aba ativa (agentes e MCPs). A de baixo fica com pasta, git e PR. */
 const props = defineProps<{
@@ -16,10 +16,43 @@ const props = defineProps<{
   anon: boolean;
   /** Modo chat: null = botão escondido (desligado nas Configurações ou sem Claude na aba). */
   chat: "off" | "on" | null;
+  /** Uso da assinatura do Claude da aba; null = sem Claude ou ainda lendo. */
+  usage: ClaudeUsage | null;
 }>();
-defineEmits<{ toggleAgents: []; toggleMcp: []; voice: []; attach: []; settings: []; toggleAnon: []; toggleChat: [] }>();
+defineEmits<{ toggleAgents: []; toggleMcp: []; voice: []; attach: []; settings: []; toggleAnon: []; toggleChat: []; setupUsage: [] }>();
 
 const clock = computed(() => `${Math.floor(props.voiceSecs / 60)}:${String(props.voiceSecs % 60).padStart(2, "0")}`);
+
+/** "five_hour" -> "5h", "seven_day_fable" -> "7d Fable". */
+function usageLabel(key: string) {
+  const m = /^(five_hour|seven_day)(?:_(.+))?$/.exec(key);
+  if (!m) return key.replace(/_/g, " ");
+  const base = m[1] === "five_hour" ? "5h" : "7d";
+  return m[2] ? `${base} ${m[2].charAt(0).toUpperCase()}${m[2].slice(1).replace(/_/g, " ")}` : base;
+}
+
+function untilReset(w: UsageWindow) {
+  if (!w.resets_at) return "";
+  const s = w.resets_at - Date.now() / 1000;
+  if (s <= 0) return " · já reiniciou";
+  const m = Math.round(s / 60);
+  if (m < 60) return ` · reinicia em ${m}min`;
+  const h = Math.floor(m / 60);
+  return h < 24 ? ` · reinicia em ${h}h${String(m % 60).padStart(2, "0")}` : ` · reinicia em ${Math.floor(h / 24)}d ${h % 24}h`;
+}
+
+const usageTitle = computed(() => {
+  const u = props.usage;
+  if (!u) return "";
+  const lines = u.windows.map((w) => `${usageLabel(w.key)}: ${Math.round(w.used)}% usado${untilReset(w)}`);
+  if (u.updated) {
+    const ago = Math.max(0, Math.round((Date.now() / 1000 - u.updated) / 60));
+    lines.push(ago < 1 ? "Atualizado agora" : `Atualizado há ${ago}min (muda a cada resposta do Claude)`);
+  }
+  return lines.join("\n");
+});
+
+const level = (used: number) => (used >= 90 ? "high" : used >= 70 ? "mid" : "");
 
 const running = computed(() => props.agents?.filter((a) => a.status === "running").length ?? 0);
 
@@ -60,6 +93,22 @@ const mcpCounts = computed(() => {
         </template>
         <span v-else-if="mcp?.loading" class="muted">…</span>
       </button>
+      <template v-if="claude && usage">
+        <button
+          v-if="!usage.installed"
+          class="btn"
+          :title="`Mostra aqui o uso da assinatura (5h, 7d e o do Fable nas contas Max). Coloca o term7 na frente da linha de status em ${usage.settings_path}; a sua linha de status continua igual. Dá pra desfazer nas Configurações.`"
+          @click="$emit('setupUsage')"
+        >
+          <span class="muted">Uso</span><span class="label">ativar</span>
+        </button>
+        <span v-else-if="usage.windows.length" class="usage" :title="usageTitle">
+          <span v-for="w in usage.windows" :key="w.key" class="win" :class="level(w.used)">
+            {{ usageLabel(w.key) }} <b>{{ Math.round(w.used) }}%</b>
+          </span>
+        </span>
+        <span v-else class="usage muted" title="O Claude manda os números junto com a linha de status: aparecem depois da próxima resposta dele (numa sessão aberta depois de ativar)">Uso …</span>
+      </template>
       <button
         v-if="chat"
         class="btn chat-toggle"
@@ -153,6 +202,24 @@ const mcpCounts = computed(() => {
 }
 .btn:disabled {
   cursor: default;
+}
+.usage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px;
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+}
+.win b {
+  color: var(--fg);
+  font-weight: 600;
+}
+.win.mid b {
+  color: var(--yellow);
+}
+.win.high b {
+  color: var(--red);
 }
 .mic.recording {
   background: color-mix(in srgb, var(--red) 16%, transparent);
