@@ -50,7 +50,8 @@ const usageTitle = computed(() => {
   return lines.join("\n");
 });
 
-const level = (used: number) => (used >= 90 ? "high" : used >= 70 ? "mid" : "");
+/** Cor do número: verde, verde-amarelo, amarelo, laranja e vermelho conforme o limite enche. */
+const level = (used: number) => (used >= 90 ? "l5" : used >= 70 ? "l4" : used >= 50 ? "l3" : used >= 30 ? "l2" : "l1");
 
 const running = computed(() => props.agents?.filter((a) => a.status === "running").length ?? 0);
 
@@ -95,12 +96,13 @@ const mcpCounts = computed(() => {
         <button
           v-if="!usage.installed"
           class="btn"
-          :title="`Mostra aqui o uso da assinatura (5h, 7d e o do Fable nas contas Max). Coloca o term7 na frente da linha de status em ${usage.settings_path}; a sua linha de status continua igual. Dá pra desfazer nas Configurações.`"
+          :title="`Mostra aqui o uso da assinatura (5h e 7d). Coloca o term7 na frente da linha de status em ${usage.settings_path}; a sua linha de status continua igual. Dá pra desfazer nas Configurações.`"
           @click="$emit('setupUsage')"
         >
           <span class="muted">Uso</span><span class="label">ativar</span>
         </button>
         <span v-else-if="usage.windows.length" class="usage" :title="usageTitle">
+          <svg class="spark" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M8 1v14M1 8h14M3.05 3.05l9.9 9.9M12.95 3.05l-9.9 9.9M4.6 1.8l2.3 4.4M11.4 14.2l-2.3-4.4M14.2 4.6 9.8 6.9M1.8 11.4l4.4-2.3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
           <span v-for="w in usage.windows" :key="w.key" class="win" :class="level(w.used)">
             {{ usageLabel(w.key) }} <b>{{ Math.round(w.used) }}%</b>
           </span>
@@ -202,10 +204,24 @@ const mcpCounts = computed(() => {
   color: var(--fg);
   font-weight: 600;
 }
-.win.mid b {
+.usage .spark {
+  flex-shrink: 0;
+  margin-right: -2px;
+  color: var(--claude);
+}
+.win.l1 b {
+  color: var(--green);
+}
+.win.l2 b {
+  color: color-mix(in srgb, var(--green) 50%, var(--yellow));
+}
+.win.l3 b {
   color: var(--yellow);
 }
-.win.high b {
+.win.l4 b {
+  color: var(--orange);
+}
+.win.l5 b {
   color: var(--red);
 }
 .mic.recording {

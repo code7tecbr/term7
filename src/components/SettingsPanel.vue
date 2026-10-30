@@ -70,7 +70,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
           <h2>Claude</h2>
           <div class="usage-row">
             <span class="hint">
-              <b>Uso na barra de cima</b> (5h, 7d e o do Fable nas contas Max):
+              <b>Uso na barra de cima</b> (5h e 7d):
               <template v-if="!usage">abra o Claude na aba pra ver ou mudar.</template>
               <template v-else-if="usage.installed">ativado em <code>{{ usage.settings_path }}</code>.</template>
               <template v-else>desativado. Ative pelo botão “Uso” na barra de cima.</template>
