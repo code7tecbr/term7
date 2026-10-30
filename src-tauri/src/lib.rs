@@ -1,4 +1,5 @@
 mod agents;
+mod chat;
 mod clipboard;
 mod claude;
 mod files;
@@ -15,6 +16,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(pty::PtyState::default())
         .manage(voice::VoiceState::default())
+        .manage(chat::ChatState::default())
         .invoke_handler(tauri::generate_handler![
             pty::pty_spawn,
             pty::pty_write,
@@ -37,6 +39,10 @@ pub fn run() {
             suggest::claude_suggestions,
             agents::claude_agents,
             agents::claude_agent_steps,
+            chat::chat_start,
+            chat::chat_send,
+            chat::chat_stop,
+            settings::settings_set_chat,
             files::read_text_file,
             files::resolve_paths,
             files::pick_files,
