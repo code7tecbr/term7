@@ -94,7 +94,7 @@ export interface Tab {
   panelCwd: string | null;
   focusedPane: "main" | "panel";
   /** Modo chat do Claude ligado nesta aba (não é salvo: ao reabrir, volta o terminal). */
-  chat: { id: number | null; sessionId: string | null } | null;
+  chat: { id: number | null; resumeCommand: string | null } | null;
 }
 
 export type SavedTab = Pick<Tab, "cwd" | "groupId"> &
@@ -469,7 +469,7 @@ export function setGroupColor(groupId: number, color: string) {
 
 // ---- títulos ----
 
-const SHELLS = new Set(["zsh", "bash", "fish", "sh", "dash", "nu", "pwsh"]);
+export const SHELLS = new Set(["zsh", "bash", "fish", "sh", "dash", "nu", "pwsh"]);
 
 export function prettyPath(path: string, home: string | null) {
   if (home && (path === home || path.startsWith(home + "/"))) return "~" + path.slice(home.length);

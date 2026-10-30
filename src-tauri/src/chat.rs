@@ -39,8 +39,10 @@ pub struct ChatState {
 #[derive(Serialize)]
 pub struct ChatStarted {
     id: u32,
-    /// Pra voltar pro terminal com `claude --resume <sessão>`.
     session_id: String,
+    /// Comando pra voltar pro terminal na mesma sessão, com a pasta de configuração
+    /// do processo (um alias como `CLAUDE_CONFIG_DIR=~/.outra claude` é outra conta).
+    resume_command: String,
     cwd: String,
     /// A conversa até aqui, no mesmo formato do popup dos agentes.
     history: Vec<agents::Step>,
@@ -62,6 +64,26 @@ fn handoff(pid: u32) -> Result<Handoff, String> {
     let transcript = suggest::transcript(pid, &proc);
     let session_id = suggest::session_id(pid, &proc).ok_or("o Claude desta aba ainda não tem sessão (mande uma mensagem antes)")?;
     Ok(Handoff { pid, exe, cwd: proc.cwd, env: proc.env, session_id, transcript })
+}
+
+/// Aspas simples só quando precisa.
+fn shell_quote(s: &str) -> String {
+    if !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "@%+=:,./~_-".contains(c)) {
+        s.to_string()
+    } else {
+        format!("'{}'", s.replace('\'', "'\\''"))
+    }
+}
+
+fn resume_command(h: &Handoff) -> String {
+    let base = format!("claude --resume {}", h.session_id);
+    let Some(dir) = h.env.get("CLAUDE_CONFIG_DIR").filter(|d| !d.is_empty()) else { return base };
+    // A padrão (~/.claude) não precisa ser repetida.
+    let default = h.env.get("HOME").map(|home| format!("{}/.claude", home.trim_end_matches('/')));
+    if default.as_deref() == Some(dir.trim_end_matches('/')) {
+        return base;
+    }
+    format!("CLAUDE_CONFIG_DIR={} {base}", shell_quote(dir))
 }
 
 fn alive(pid: u32) -> bool {
@@ -164,6 +186,7 @@ pub async fn chat_start(
 
         Ok(ChatStarted {
             id,
+            resume_command: resume_command(&h),
             session_id: h.session_id,
             cwd: h.cwd.to_string_lossy().into_owned(),
             history,
@@ -202,4 +225,34 @@ pub async fn chat_stop(state: State<'_, ChatState>, id: u32) -> Result<(), Strin
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn handoff_with(env: &[(&str, &str)]) -> Handoff {
+        Handoff {
+            pid: 1,
+            exe: PathBuf::from("/bin/claude"),
+            cwd: PathBuf::from("/"),
+            env: env.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            session_id: "abc-123".into(),
+            transcript: None,
+        }
+    }
+
+    #[test]
+    fn retoma_com_a_pasta_de_configuracao() {
+        assert_eq!(resume_command(&handoff_with(&[("HOME", "/home/u")])), "claude --resume abc-123");
+        assert_eq!(resume_command(&handoff_with(&[("HOME", "/home/u"), ("CLAUDE_CONFIG_DIR", "/home/u/.claude")])), "claude --resume abc-123");
+        assert_eq!(
+            resume_command(&handoff_with(&[("HOME", "/home/u"), ("CLAUDE_CONFIG_DIR", "/home/u/.claude-code7")])),
+            "CLAUDE_CONFIG_DIR=/home/u/.claude-code7 claude --resume abc-123"
+        );
+        assert_eq!(
+            resume_command(&handoff_with(&[("CLAUDE_CONFIG_DIR", "/tmp/com espaço")])),
+            "CLAUDE_CONFIG_DIR='/tmp/com espaço' claude --resume abc-123"
+        );
+    }
 }

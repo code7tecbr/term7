@@ -5,6 +5,8 @@ import type { AgentStep } from "./pty";
 export interface ChatStarted {
   id: number;
   session_id: string;
+  /** Comando pra voltar pro terminal na mesma sessão (com o CLAUDE_CONFIG_DIR do processo, se houver). */
+  resume_command: string;
   cwd: string;
   history: AgentStep[];
 }
