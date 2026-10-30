@@ -29,6 +29,9 @@ const FileView = defineAsyncComponent(() => import("./components/FileView.vue"))
 const AgentSteps = defineAsyncComponent(() => import("./components/AgentSteps.vue"));
 import {
   claudeAgents,
+  claudeUsage,
+  claudeUsageSetup,
+  type ClaudeUsage,
   claudeHooksInstall,
   claudeHooksStatus,
   claudeMcpList,
@@ -298,6 +301,32 @@ async function pollAgents() {
   agents.value = await claudeAgents(session.id).catch(() => agents.value);
 }
 const agentsTimer = setInterval(pollAgents, 2000);
+
+// ---- uso da assinatura (5h, 7d, Fable...) do Claude da aba ----
+const usage = ref<ClaudeUsage | null>(null);
+async function pollUsage() {
+  const tab = activeTab.value;
+  const session = tab && sessions.get(tab.id);
+  if (tab?.process !== "claude" || !session) return void (usage.value = null);
+  usage.value = await claudeUsage(session.id).catch(() => usage.value);
+}
+// O arquivo só muda a cada resposta do Claude: 15 s basta.
+const usageTimer = setInterval(pollUsage, 15_000);
+watch(
+  () => [activeTab.value?.id, activeTab.value?.process],
+  () => ((usage.value = null), pollUsage()),
+);
+
+async function setupUsage(enabled: boolean) {
+  const session = activeTab.value && sessions.get(activeTab.value.id);
+  if (!session) return flash("Abra o Claude nesta aba pra ativar o uso.");
+  try {
+    usage.value = await claudeUsageSetup(session.id, enabled);
+    flash(enabled ? "Uso ativado: aparece depois da próxima resposta do Claude (numa sessão nova)." : "Uso desativado: a linha de status voltou a ser só a sua.");
+  } catch (err) {
+    flash(`Uso: ${err}`);
+  }
+}
 watch(
   () => [activeTab.value?.id, activeTab.value?.process],
   () => ((agents.value = null), (agentView.value = null), (agentsAt = 0), pollAgents()),
@@ -607,6 +636,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("blur", onWindowBlur);
   clearInterval(pollTimer);
   clearInterval(agentsTimer);
+  clearInterval(usageTimer);
   clearInterval(voiceTimer);
   if (voice.value === "recording") voiceCancel().catch(() => {});
   unlistenDrop.then((off) => off());
@@ -632,6 +662,8 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
       @attach="attachFiles"
       :anon="anon"
       :chat="chatButton"
+      :usage="usage"
+      @setup-usage="setupUsage(true)"
       @toggle-chat="toggleChat"
       @settings="settingsOpen = true"
       @toggle-anon="anon = !anon"
@@ -751,7 +783,9 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
       @open-tab="popupToTab"
     />
     <CloseConfirm v-if="closePrompt" :items="closePrompt" @cancel="closePrompt = null" @confirm="confirmClose" />
-    <SettingsPanel v-if="settingsOpen" @close="settingsOpen = false" @chat="chatEnabled = $event" />
+    <SettingsPanel v-if="settingsOpen" @close="settingsOpen = false" @chat="chatEnabled = $event"
+      :usage="activeTab?.process === 'claude' ? usage : null"
+      @usage="setupUsage" />
     <AgentsMenu
       v-if="agentsOpen && agents?.length"
       :agents="agents"

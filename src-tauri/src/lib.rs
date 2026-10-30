@@ -10,6 +10,7 @@ mod session;
 mod settings;
 mod suggest;
 mod update;
+mod usage;
 mod voice;
 
 pub fn run() {
@@ -36,6 +37,8 @@ pub fn run() {
             claude::claude_hooks_status,
             claude::claude_hooks_install,
             claude::claude_mcp_list,
+            usage::claude_usage,
+            usage::claude_usage_setup,
             suggest::claude_suggestions,
             agents::claude_agents,
             agents::claude_agent_steps,

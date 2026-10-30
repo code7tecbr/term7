@@ -91,6 +91,22 @@ export interface Agent {
   tool_calls: number;
   last_tool: string | null;
 }
+/** Uma janela de limite da assinatura: "five_hour", "seven_day", "seven_day_fable"... */
+export interface UsageWindow {
+  key: string;
+  used: number;
+  resets_at: number | null;
+}
+export interface ClaudeUsage {
+  /** O term7 está no statusLine desse Claude (é de lá que vêm os números). */
+  installed: boolean;
+  windows: UsageWindow[];
+  updated: number | null;
+  settings_path: string;
+}
+export const claudeUsage = (id: number) => invoke<ClaudeUsage>("claude_usage", { id });
+export const claudeUsageSetup = (id: number, enabled: boolean) => invoke<ClaudeUsage>("claude_usage_setup", { id, enabled });
+
 export const claudeAgents = (id: number) => invoke<Agent[]>("claude_agents", { id });
 
 /** Um passo do subagente: o pedido, o que ele escreveu ou uma ferramenta (result null = rodando). */

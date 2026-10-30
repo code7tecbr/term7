@@ -52,7 +52,7 @@ pub fn pane_key(id: u32) -> String {
     format!("{}-{id}", std::process::id())
 }
 
-fn state_dir() -> PathBuf {
+pub(crate) fn state_dir() -> PathBuf {
     let base = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
     base.join("term7")
 }
@@ -105,7 +105,7 @@ fn process_start(pid: u32) -> Option<SystemTime> {
 
 /// settings.json do Claude que roda na aba: respeita o CLAUDE_CONFIG_DIR do
 /// processo (pode estar só no ~/.zshrc, que o app aberto pelo menu não vê).
-fn settings_path(foreground: Option<u32>) -> Option<PathBuf> {
+pub(crate) fn settings_path(foreground: Option<u32>) -> Option<PathBuf> {
     let from_process = foreground.and_then(|pid| {
         let env = std::fs::read(format!("/proc/{pid}/environ")).ok()?;
         env.split(|&b| b == 0).find_map(|var| {
@@ -119,7 +119,7 @@ fn settings_path(foreground: Option<u32>) -> Option<PathBuf> {
     Some(dir.join("settings.json"))
 }
 
-fn read_settings(path: &Path) -> Result<Value, String> {
+pub(crate) fn read_settings(path: &Path) -> Result<Value, String> {
     match std::fs::read_to_string(path) {
         Ok(text) if text.trim().is_empty() => Ok(json!({})),
         Ok(text) => serde_json::from_str(&text).map_err(|e| format!("{} inválido: {e}", path.display())),
@@ -167,6 +167,11 @@ fn install(path: &Path) -> Result<(), String> {
         entries.push(hook_entry(*matcher, *state));
     }
 
+    write_settings(path, &settings)
+}
+
+/// Grava o settings.json do Claude: cópia do original na primeira vez e troca atômica.
+pub(crate) fn write_settings(path: &Path, settings: &Value) -> Result<(), String> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
@@ -175,7 +180,7 @@ fn install(path: &Path) -> Result<(), String> {
     if path.exists() && !backup.exists() {
         std::fs::copy(path, &backup).map_err(|e| e.to_string())?;
     }
-    let text = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())? + "\n";
+    let text = serde_json::to_string_pretty(settings).map_err(|e| e.to_string())? + "\n";
     let tmp = path.with_extension("json.term7.tmp");
     std::fs::write(&tmp, text).map_err(|e| e.to_string())?;
     std::fs::rename(&tmp, path).map_err(|e| e.to_string())
