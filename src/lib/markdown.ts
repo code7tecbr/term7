@@ -19,9 +19,6 @@ export function md(text: string) {
   return html;
 }
 
-/** Texto que ainda está chegando: cada pedaço é diferente, guardar só enche o cache. */
-export const mdLive = render;
-
 /** Links dentro do Markdown abrem no navegador, nunca dentro do app. */
 export function onLinkClick(e: MouseEvent) {
   const a = (e.target as HTMLElement).closest("a");

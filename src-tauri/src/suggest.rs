@@ -64,16 +64,11 @@ fn session_info(pid: u32, proc: &Proc) -> Option<(PathBuf, Value, String)> {
     let config = config_dir(&proc.env)?;
     let info: Value = serde_json::from_str(&std::fs::read_to_string(config.join(format!("sessions/{pid}.json"))).ok()?).ok()?;
     let id = info.get("sessionId")?.as_str()?.to_string();
-    // O id vira nome de arquivo (e argumento do --resume): só aceita o formato de um UUID.
+    // O id vira nome de arquivo só aceita o formato de um UUID.
     if id.is_empty() || !id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
         return None;
     }
     Some((config, info, id))
-}
-
-/// Id da sessão desse processo do Claude.
-pub(crate) fn session_id(pid: u32, proc: &Proc) -> Option<String> {
-    session_info(pid, proc).map(|(_, _, id)| id)
 }
 
 /// Histórico da sessão desse processo do Claude.

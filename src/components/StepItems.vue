@@ -5,7 +5,7 @@ import { md, onLinkClick } from "../lib/markdown";
 
 /**
  * Passos de uma conversa do Claude: mensagens do usuário, textos em Markdown e
- * ferramentas que abrem e fecham. Usado no popup dos agentes e no modo chat.
+ * ferramentas que abrem e fecham. Usado no popup dos agentes.
  */
 defineProps<{ steps: AgentStep[]; promptLabel: string }>();
 
