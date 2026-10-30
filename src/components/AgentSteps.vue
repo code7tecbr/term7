@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import StepItems from "./StepItems.vue";
 import { claudeAgentSteps, type Agent, type AgentStep } from "../lib/pty";
 
@@ -46,6 +46,23 @@ watch(
 
 const LABEL = { running: "Rodando", done: "Terminou", stalled: "Parado" } as const;
 
+// Relógio da linha "ao vivo": anda entre uma leitura e outra do histórico.
+const now = ref(Date.now());
+const clock = setInterval(() => (now.value = Date.now()), 1000);
+
+/**
+ * O que o agente está fazendo agora, como a linha piscando do terminal. O histórico
+ * só ganha um passo quando ele termina: ferramenta sem resultado = rodando; senão, pensando.
+ */
+const live = computed(() => {
+  if (props.agent.status !== "running") return null;
+  const last = steps.value[steps.value.length - 1];
+  const what = last?.kind === "tool" && last.result === null ? `${last.name}: ${last.summary}` : "Pensando…";
+  const since = props.agent.updated ? Math.max(0, Math.round((now.value - Date.parse(props.agent.updated)) / 1000)) : null;
+  const secs = since === null ? "" : since < 60 ? `${since}s` : `${Math.floor(since / 60)}min ${since % 60}s`;
+  return { what, secs };
+});
+
 function onKey(e: KeyboardEvent) {
   if (e.key !== "Escape") return;
   e.preventDefault();
@@ -55,6 +72,7 @@ function onKey(e: KeyboardEvent) {
 onMounted(() => window.addEventListener("keydown", onKey, true));
 onBeforeUnmount(() => {
   clearInterval(timer);
+  clearInterval(clock);
   window.removeEventListener("keydown", onKey, true);
 });
 </script>
@@ -76,6 +94,11 @@ onBeforeUnmount(() => {
         <p v-if="error" class="empty error">{{ error }}</p>
         <p v-else-if="!steps.length" class="empty">Nada registrado ainda.</p>
         <StepItems :steps="steps" prompt-label="Pedido" />
+      </div>
+      <div v-if="live" class="live" :title="live.what">
+        <span class="spark" />
+        <span class="what">{{ live.what }}</span>
+        <span v-if="live.secs" class="secs">{{ live.secs }}</span>
       </div>
     </div>
   </div>
@@ -172,6 +195,39 @@ header {
   overflow-y: auto;
   font-size: 13px;
 }
+/* Linha "ao vivo" fixa embaixo, como o status do Claude no terminal. */
+.live {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 7px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elevated);
+  font-size: 12px;
+}
+.spark {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--claude);
+  box-shadow: 0 0 6px var(--claude);
+  animation: pulse 1s ease-in-out infinite;
+}
+.live .what {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--claude);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.secs {
+  flex-shrink: 0;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
 .empty {
   margin: auto;
   color: var(--fg-muted);
@@ -185,6 +241,7 @@ header {
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .spark,
   .dot.running {
     animation: none;
   }
