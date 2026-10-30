@@ -97,5 +97,5 @@ export const claudeAgents = (id: number) => invoke<Agent[]>("claude_agents", { i
 export type AgentStep =
   | { kind: "prompt"; text: string }
   | { kind: "text"; text: string }
-  | { kind: "tool"; name: string; summary: string; result: string | null; error: boolean };
+  | { kind: "tool"; name: string; summary: string; detail: string | null; result: string | null; error: boolean };
 export const claudeAgentSteps = (id: number, agent: string) => invoke<AgentStep[]>("claude_agent_steps", { id, agent });
