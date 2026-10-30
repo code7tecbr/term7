@@ -30,9 +30,36 @@ struct ChatProc {
     pid: u32,
 }
 
+/// Log do último chat (`chat.log` na pasta de dados do app), pra investigar quando
+/// algo trava: o que foi mandado (>), o que o Claude respondeu (<) e o stderr (!).
+/// Tem a conversa: fica com permissão 600 e é recriado a cada chat.
+#[derive(Clone)]
+struct ChatLog(std::sync::Arc<Mutex<Option<std::fs::File>>>);
+
+impl ChatLog {
+    fn open(app: &AppHandle) -> Self {
+        use std::os::unix::fs::OpenOptionsExt;
+        let file = app.path().app_data_dir().ok().and_then(|dir| {
+            std::fs::create_dir_all(&dir).ok()?;
+            std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(dir.join("chat.log")).ok()
+        });
+        Self(std::sync::Arc::new(Mutex::new(file)))
+    }
+
+    fn write(&self, mark: char, text: &str) {
+        let mut guard = self.0.lock().unwrap();
+        let Some(f) = guard.as_mut() else { return };
+        let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0);
+        // Linhas enormes (histórico, resultados) só atrapalham a leitura.
+        let text: String = if text.chars().count() > 1500 { text.chars().take(1500).chain(" …".chars()).collect() } else { text.to_string() };
+        let _ = writeln!(f, "{secs:.3} {mark} {text}");
+    }
+}
+
 #[derive(Default)]
 pub struct ChatState {
     procs: Mutex<HashMap<u32, ChatProc>>,
+    log: Mutex<Option<ChatLog>>,
     next_id: AtomicU32,
 }
 
@@ -143,10 +170,24 @@ pub async fn chat_start(
 ) -> Result<ChatStarted, String> {
     let fg = crate::pty::foreground_pid(&pty, pty_id).ok_or("aba sem processo")?;
     tauri::async_runtime::spawn_blocking(move || {
-        let h = handoff(fg)?;
+        let log = ChatLog::open(&app);
+        *app.state::<ChatState>().log.lock().unwrap() = Some(log.clone());
+        let h = match handoff(fg) {
+            Ok(h) => h,
+            Err(e) => {
+                log.write('!', &format!("handoff: {e}"));
+                return Err(e);
+            }
+        };
+        log.write('-', &format!("sessão {} em {} ({})", h.session_id, h.cwd.display(), h.exe.display()));
         let history = h.transcript.as_deref().and_then(|t| std::fs::read_to_string(t).ok()).map(|t| agents::steps(&t)).unwrap_or_default();
-        terminate(h.pid)?;
-        let mut child = spawn(&h)?;
+        if let Err(e) = terminate(h.pid) {
+            log.write('!', &e);
+            return Err(e);
+        }
+        log.write('-', "Claude do terminal encerrado");
+        let mut child = spawn(&h).inspect_err(|e| log.write('!', e))?;
+        log.write('-', &format!("chat aberto, pid {}", child.id()));
         let stdin = child.stdin.take().ok_or("sem stdin")?;
         let stdout = child.stdout.take().ok_or("sem stdout")?;
         let stderr = child.stderr.take().ok_or("sem stderr")?;
@@ -157,8 +198,10 @@ pub async fn chat_start(
         // O stderr só interessa se o processo morrer: guarda o fim dele.
         let err_tail = std::sync::Arc::new(Mutex::new(String::new()));
         let tail = err_tail.clone();
+        let err_log = log.clone();
         thread::spawn(move || {
             for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                err_log.write('!', &line);
                 let mut t = tail.lock().unwrap();
                 t.push_str(&line);
                 t.push('\n');
@@ -174,11 +217,17 @@ pub async fn chat_start(
                 if line.trim().is_empty() {
                     continue;
                 }
+                // As fatias do texto em streaming são muitas: o log fica com as mensagens inteiras.
+                if !line.starts_with(r#"{"type":"stream_event""#) {
+                    log.write('<', &line);
+                }
                 if on_line.send(line).is_err() {
+                    log.write('!', "a tela do chat parou de receber");
                     break;
                 }
             }
             let code = child.wait().ok().and_then(|s| s.code()).unwrap_or(-1);
+            log.write('-', &format!("chat fechou com código {code}"));
             app.state::<ChatState>().procs.lock().unwrap().remove(&id);
             let tail = err_tail.lock().unwrap().clone();
             let _ = on_exit.send((code, tail));
@@ -202,6 +251,9 @@ pub fn chat_send(state: State<'_, ChatState>, id: u32, message: Value) -> Result
     let mut procs = state.procs.lock().unwrap();
     let p = procs.get_mut(&id).ok_or("o chat já foi encerrado")?;
     let mut line = serde_json::to_string(&message).map_err(|e| e.to_string())?;
+    if let Some(log) = state.log.lock().unwrap().as_ref() {
+        log.write('>', &line);
+    }
     line.push('\n');
     p.stdin.write_all(line.as_bytes()).and_then(|_| p.stdin.flush()).map_err(|e| e.to_string())
 }

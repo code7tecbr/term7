@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import StepItems from "./StepItems.vue";
 import { chatInputs, chatSend, chatStart, chatStop, resultText, toolSummary } from "../lib/chat";
-import { md, onLinkClick } from "../lib/markdown";
+import { mdLive, onLinkClick } from "../lib/markdown";
 import type { AgentStep } from "../lib/pty";
 
 /**
@@ -236,7 +236,7 @@ onBeforeUnmount(() => {
         <p v-else-if="!steps.length && !exited" class="empty">Escreva embaixo pra começar.</p>
         <StepItems :steps="steps" prompt-label="Você" />
         <!-- eslint-disable-next-line vue/no-v-html -- sanitizado com DOMPurify -->
-        <div v-if="streaming" class="text markdown say streaming" @click="onLinkClick" v-html="md(streaming)" />
+        <div v-if="streaming" class="text markdown say streaming" @click="onLinkClick" v-html="mdLive(streaming)" />
         <div v-for="p in permissions" :key="p.requestId" class="permission">
           <div class="perm-head">
             <span class="perm-label">Permissão</span>
