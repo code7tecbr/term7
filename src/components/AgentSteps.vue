@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import DOMPurify from "dompurify";
+import { marked } from "marked";
+import { openUrl } from "../lib/github";
 import { claudeAgentSteps, type Agent, type AgentStep } from "../lib/pty";
 
 /** O que um subagente fez até agora: o pedido, o que escreveu e cada ferramenta. */
@@ -32,6 +35,26 @@ async function load() {
 function onScroll() {
   const el = list.value!;
   follow = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+}
+
+// A lista é relida a cada 2 s: guarda o HTML de cada texto pra não converter de novo.
+const htmlCache = new Map<string, string>();
+/** O agente escreve em Markdown; passa pelo DOMPurify porque o texto pode vir de qualquer arquivo lido. */
+function md(text: string) {
+  let html = htmlCache.get(text);
+  if (html === undefined) {
+    html = DOMPurify.sanitize(marked.parse(text, { async: false, gfm: true, breaks: true }));
+    htmlCache.set(text, html);
+  }
+  return html;
+}
+
+function onLinkClick(e: MouseEvent) {
+  const a = (e.target as HTMLElement).closest("a");
+  if (!a) return;
+  e.preventDefault();
+  const href = a.getAttribute("href") ?? "";
+  if (/^https?:\/\//.test(href)) openUrl(href).catch(() => {});
 }
 
 function toggle(i: number) {
@@ -86,16 +109,21 @@ onBeforeUnmount(() => {
         <template v-for="(s, i) in steps" :key="i">
           <div v-if="s.kind === 'prompt'" class="prompt">
             <span class="label">Pedido</span>
-            <div class="text">{{ s.text }}</div>
+            <!-- eslint-disable-next-line vue/no-v-html -- sanitizado com DOMPurify -->
+            <div class="text markdown" @click="onLinkClick" v-html="md(s.text)" />
           </div>
-          <div v-else-if="s.kind === 'text'" class="text say">{{ s.text }}</div>
+          <!-- eslint-disable-next-line vue/no-v-html -- sanitizado com DOMPurify -->
+          <div v-else-if="s.kind === 'text'" class="text markdown say" @click="onLinkClick" v-html="md(s.text)" />
           <div v-else class="tool" :class="{ error: s.error, pending: s.result === null }">
-            <button class="call" :disabled="s.result === null" @click="toggle(i)">
+            <button class="call" :title="s.detail ?? s.summary" @click="toggle(i)">
               <span class="tname">{{ s.name }}</span>
-              <span class="summary">{{ s.summary }}</span>
+              <span class="summary" :class="{ plain: s.detail }">{{ s.summary }}</span>
               <span class="state">{{ s.result === null ? "rodando…" : s.error ? "erro" : open.has(i) ? "▾" : "▸" }}</span>
             </button>
-            <pre v-if="s.result !== null && open.has(i)" class="result">{{ s.result || "(sem saída)" }}</pre>
+            <template v-if="open.has(i)">
+              <pre v-if="s.detail" class="detail">{{ s.detail }}</pre>
+              <pre class="result">{{ s.result === null ? "(ainda rodando)" : s.result || "(sem saída)" }}</pre>
+            </template>
           </div>
         </template>
       </div>
@@ -202,15 +230,93 @@ header {
   color: var(--red);
 }
 .text {
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
-  line-height: 1.5;
+  line-height: 1.55;
+  user-select: text;
+}
+/* Margens de bloco somem nas pontas: cada passo já tem o seu espaçamento. */
+.markdown :deep(> :first-child) {
+  margin-top: 0;
+}
+.markdown :deep(> :last-child) {
+  margin-bottom: 0;
+}
+.markdown :deep(p),
+.markdown :deep(ul),
+.markdown :deep(ol),
+.markdown :deep(pre),
+.markdown :deep(blockquote),
+.markdown :deep(table) {
+  margin: 0 0 0.6em;
+}
+.markdown :deep(ul),
+.markdown :deep(ol) {
+  padding-left: 1.4em;
+}
+.markdown :deep(h1),
+.markdown :deep(h2),
+.markdown :deep(h3),
+.markdown :deep(h4) {
+  margin: 0.9em 0 0.4em;
+  font-size: 1em;
+  line-height: 1.3;
+}
+.markdown :deep(h1),
+.markdown :deep(h2) {
+  font-size: 1.1em;
+}
+.markdown :deep(a) {
+  color: var(--accent);
+}
+.markdown :deep(code) {
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+.markdown :deep(pre) {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  overflow-x: auto;
+}
+.markdown :deep(pre code) {
+  padding: 0;
+  background: none;
+}
+.markdown :deep(blockquote) {
+  padding: 0 0.9em;
+  border-left: 3px solid var(--border);
+  color: var(--fg-muted);
+}
+/* Tabela larga rola sozinha, sem alargar o popup. */
+.markdown :deep(table) {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.markdown :deep(th),
+.markdown :deep(td) {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+}
+.markdown :deep(hr) {
+  border: 0;
+  border-top: 1px solid var(--border);
 }
 .prompt {
   padding: 8px 10px;
   border-left: 2px solid var(--claude);
   border-radius: 4px;
   background: var(--bg-elevated);
+}
+.prompt .markdown :deep(code),
+.prompt .markdown :deep(pre) {
+  background: var(--bg);
 }
 .prompt .text {
   max-height: 180px;
@@ -242,11 +348,8 @@ header {
   text-align: left;
   cursor: pointer;
 }
-.call:hover:not(:disabled) {
+.call:hover {
   background: var(--hover);
-}
-.call:disabled {
-  cursor: default;
 }
 .tname {
   flex-shrink: 0;
@@ -262,6 +365,10 @@ header {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+/* Descrição do Bash é frase, não código. */
+.summary.plain {
+  font-family: inherit;
+}
 .state {
   flex-shrink: 0;
   color: var(--fg-muted);
@@ -275,6 +382,18 @@ header {
 }
 .tool.error .state {
   color: var(--red);
+}
+.detail {
+  margin: 0;
+  padding: 8px 10px;
+  max-height: 160px;
+  overflow: auto;
+  border-top: 1px solid var(--border);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .result {
   max-height: 240px;

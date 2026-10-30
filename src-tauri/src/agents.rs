@@ -187,8 +187,10 @@ pub enum Step {
     Text { text: String },
     Tool {
         name: String,
-        /// O essencial do pedido: o comando, o arquivo, o padrão buscado.
+        /// O essencial do pedido: a descrição do comando, o arquivo, o padrão buscado.
         summary: String,
+        /// O comando completo, quando o resumo é só a descrição dele.
+        detail: Option<String>,
         /// Começo do resultado; None enquanto a ferramenta roda.
         result: Option<String>,
         error: bool,
@@ -196,7 +198,8 @@ pub enum Step {
 }
 
 const MAX_STEPS: usize = 300;
-const MAX_TEXT: usize = 4000;
+// Os relatórios finais dos agentes passam fácil de 4 mil caracteres.
+const MAX_TEXT: usize = 30_000;
 const MAX_RESULT: usize = 800;
 
 fn clip(s: &str, max: usize) -> String {
@@ -209,11 +212,32 @@ fn clip(s: &str, max: usize) -> String {
     out
 }
 
+/// Caminhos dentro da pasta do agente ficam relativos: numa worktree, o prefixo
+/// absoluto ocupava a linha toda e escondia o arquivo.
+fn relative(text: &str, cwd: &str) -> String {
+    let mut out = text.to_string();
+    if cwd.len() > 1 {
+        out = out.replace(&format!("{}/", cwd.trim_end_matches('/')), "");
+    }
+    // Fora da pasta do agente, a pasta pessoal vira "~".
+    match std::env::var("HOME") {
+        Ok(home) if home.len() > 1 => out.replace(&format!("{}/", home.trim_end_matches('/')), "~/"),
+        _ => out,
+    }
+}
+
 /// O campo que diz o que a ferramenta foi fazer; nas desconhecidas, o JSON todo.
-fn tool_summary(name: &str, input: &Value) -> String {
+/// No Bash, a descrição dada pelo agente; o comando vai no detalhe.
+fn tool_summary(name: &str, input: &Value, cwd: &str) -> (String, Option<String>) {
     let field = |k: &str| input.get(k).and_then(Value::as_str);
+    if name == "Bash" {
+        let command = field("command").map(|c| clip(&relative(c, cwd), 2000));
+        if let Some(desc) = field("description").filter(|d| !d.trim().is_empty()) {
+            return (clip(desc, 600), command);
+        }
+        return (command.unwrap_or_default(), None);
+    }
     let main = match name {
-        "Bash" => field("command"),
         "Read" | "Edit" | "Write" | "NotebookEdit" => field("file_path").or(field("notebook_path")),
         "Grep" | "Glob" => field("pattern"),
         "WebFetch" => field("url"),
@@ -222,7 +246,7 @@ fn tool_summary(name: &str, input: &Value) -> String {
         "Skill" => field("skill"),
         _ => None,
     };
-    clip(&main.map(str::to_string).unwrap_or_else(|| input.to_string()), 600)
+    (clip(&relative(&main.map(str::to_string).unwrap_or_else(|| input.to_string()), cwd), 600), None)
 }
 
 fn result_text(content: &Value) -> String {
@@ -245,8 +269,12 @@ fn steps(jsonl: &str) -> Vec<Step> {
     let mut out: Vec<Step> = Vec::new();
     // tool_use_id -> posição do passo, pra encaixar o resultado que vem depois.
     let mut pending: HashMap<String, usize> = HashMap::new();
+    let mut cwd = String::new();
     for line in jsonl.lines() {
         let Ok(d) = serde_json::from_str::<Value>(line) else { continue };
+        if let Some(c) = d.get("cwd").and_then(Value::as_str) {
+            cwd = c.to_string();
+        }
         let Some(content) = d.pointer("/message/content") else { continue };
         match d.get("type").and_then(Value::as_str) {
             Some("user") => match content {
@@ -279,11 +307,11 @@ fn steps(jsonl: &str) -> Vec<Step> {
                         }
                         Some("tool_use") => {
                             let name = c.get("name").and_then(Value::as_str).unwrap_or("?").to_string();
-                            let summary = tool_summary(&name, c.get("input").unwrap_or(&Value::Null));
+                            let (summary, detail) = tool_summary(&name, c.get("input").unwrap_or(&Value::Null), &cwd);
                             if let Some(id) = c.get("id").and_then(Value::as_str) {
                                 pending.insert(id.to_string(), out.len());
                             }
-                            out.push(Step::Tool { name, summary, result: None, error: false });
+                            out.push(Step::Tool { name, summary, detail, result: None, error: false });
                         }
                         _ => {}
                     }
@@ -342,14 +370,14 @@ mod tests {
     fn monta_os_passos() {
         let jsonl = r#"{"type":"user","message":{"content":"Revise o código"}}
 {"type":"user","message":{"content":"<system-reminder>x</system-reminder>"}}
-{"type":"assistant","message":{"content":[{"type":"thinking","thinking":""},{"type":"text","text":"Vou ler."},{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"/a.rs"}}]}}
+{"type":"assistant","cwd":"/proj","message":{"content":[{"type":"thinking","thinking":""},{"type":"text","text":"Vou ler."},{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"/proj/src/a.rs"}}]}}
 {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","is_error":true,"content":[{"type":"text","text":"não existe"}]}]}}
-{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"ls"}}]}}"#;
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"ls /proj/src","description":"Lista os fontes"}}]}}"#;
         let s = steps(jsonl);
         assert_eq!(s.len(), 4);
         assert!(matches!(&s[0], Step::Prompt { text } if text == "Revise o código"));
         assert!(matches!(&s[1], Step::Text { text } if text == "Vou ler."));
-        assert!(matches!(&s[2], Step::Tool { name, summary, result: Some(r), error: true } if name == "Read" && summary == "/a.rs" && r == "não existe"));
-        assert!(matches!(&s[3], Step::Tool { summary, result: None, .. } if summary == "ls"));
+        assert!(matches!(&s[2], Step::Tool { name, summary, result: Some(r), error: true, .. } if name == "Read" && summary == "src/a.rs" && r == "não existe"));
+        assert!(matches!(&s[3], Step::Tool { summary, detail: Some(d), result: None, .. } if summary == "Lista os fontes" && d == "ls src"));
     }
 }
