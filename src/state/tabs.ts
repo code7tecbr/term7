@@ -94,7 +94,7 @@ export interface Tab {
   panelCwd: string | null;
   focusedPane: "main" | "panel";
   /** Modo chat do Claude ligado nesta aba (não é salvo: ao reabrir, volta o terminal). */
-  chat: { id: number | null; sessionId: string | null } | null;
+  chat: { id: number | null; resumeCommand: string | null } | null;
 }
 
 export type SavedTab = Pick<Tab, "cwd" | "groupId"> &

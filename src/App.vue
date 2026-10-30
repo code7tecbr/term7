@@ -431,7 +431,7 @@ async function toggleChat() {
   if (!sessions.get(tab.id)) return;
   agentsOpen.value = false;
   mcpOpen.value = false;
-  tab.chat = { id: null, sessionId: null };
+  tab.chat = { id: null, resumeCommand: null };
 }
 
 /** Fecha o chat e retoma a mesma conversa no terminal. */
@@ -441,7 +441,7 @@ async function leaveChat(tab: Tab) {
   // Os dois não podem escrever na mesma sessão: espera o do chat sair antes.
   if (chat.id !== null) await chatStop(chat.id).catch(() => {});
   tab.chat = null;
-  if (chat.sessionId) sessions.get(tab.id)?.write(`claude --resume ${chat.sessionId}\r`).catch(() => {});
+  if (chat.resumeCommand) sessions.get(tab.id)?.write(`${chat.resumeCommand}\r`).catch(() => {});
 }
 
 function onChatFailed(tab: Tab, message: string) {
@@ -663,7 +663,7 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
                   :home="home"
                   :focused="isActive(tab) && tab.focusedPane === 'main' && tab.view === -1"
                   @mousedown="tab.focusedPane = 'main'"
-                  @started="(id, sessionId) => tab.chat && Object.assign(tab.chat, { id, sessionId })"
+                  @started="(id, resumeCommand) => tab.chat && Object.assign(tab.chat, { id, resumeCommand })"
                   @failed="onChatFailed(tab, $event)"
                   @back="leaveChat(tab)"
                 />

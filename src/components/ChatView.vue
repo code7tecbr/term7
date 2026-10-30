@@ -11,7 +11,7 @@ import type { AgentStep } from "../lib/pty";
  * abre ao montar e encerra ao desmontar.
  */
 const props = defineProps<{ tabId: number; ptyId: number; home: string | null; focused: boolean }>();
-const emit = defineEmits<{ started: [id: number, sessionId: string]; failed: [message: string]; back: [] }>();
+const emit = defineEmits<{ started: [id: number, resumeCommand: string]; failed: [message: string]; back: [] }>();
 
 interface Permission {
   requestId: string;
@@ -212,7 +212,7 @@ onMounted(async () => {
     chatId = started.id;
     cwd = started.cwd;
     steps.value = started.history;
-    emit("started", started.id, started.session_id);
+    emit("started", started.id, started.resume_command);
     scrollEnd();
   } catch (err) {
     emit("failed", String(err));
