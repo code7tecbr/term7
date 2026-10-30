@@ -11,7 +11,6 @@ import BranchPicker from "./components/BranchPicker.vue";
 import McpMenu from "./components/McpMenu.vue";
 import TopBar from "./components/TopBar.vue";
 import AgentsMenu from "./components/AgentsMenu.vue";
-import AgentSteps from "./components/AgentSteps.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
 import { loadSettings, pickFiles, shellQuote, voiceCancel, voiceStart, voiceStop } from "./lib/settings";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -23,6 +22,8 @@ import type { PathTarget } from "./lib/paths";
 
 // O visualizador (CodeMirror) é pesado: só carrega quando abrir o primeiro arquivo.
 const FileView = defineAsyncComponent(() => import("./components/FileView.vue"));
+// Sob demanda: traz o marked e o DOMPurify só quando o popup abre.
+const AgentSteps = defineAsyncComponent(() => import("./components/AgentSteps.vue"));
 import {
   claudeAgents,
   claudeHooksInstall,
