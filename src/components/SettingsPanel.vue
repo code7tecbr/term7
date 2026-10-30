@@ -1,25 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import type { ClaudeUsage } from "../lib/pty";
-import { loadSettings, saveSettings, setChatMode, VOICE_PRESETS, type VoiceSettings } from "../lib/settings";
+import { loadSettings, saveSettings, VOICE_PRESETS, type VoiceSettings } from "../lib/settings";
 
-/** Configurações do term7: modo chat do Claude e ditado por voz. */
+/** Configurações do term7: uso do Claude na barra e ditado por voz. */
 defineProps<{ usage: ClaudeUsage | null }>();
-const emit = defineEmits<{ close: []; chat: [enabled: boolean]; usage: [enabled: boolean] }>();
-
-/** Liga na hora, sem o "Salvar": é só um interruptor. */
-const chat = ref(false);
-const chatStatus = ref("");
-async function toggleChat() {
-  const next = !chat.value;
-  try {
-    chat.value = (await setChatMode(next)).claude_chat;
-    chatStatus.value = "";
-    emit("chat", chat.value);
-  } catch (err) {
-    chatStatus.value = `Não deu pra salvar: ${err}`;
-  }
-}
+const emit = defineEmits<{ close: []; usage: [enabled: boolean] }>();
 
 const voice = reactive<VoiceSettings>({ engine: "api", api_url: "", api_model: "", local_bin: "", local_model: "", language: "" });
 const hasKey = ref(false);
@@ -64,7 +50,6 @@ onMounted(async () => {
   if (view) {
     Object.assign(voice, view.voice);
     hasKey.value = view.has_api_key;
-    chat.value = view.claude_chat;
   }
 });
 onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
@@ -83,19 +68,6 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
       <form class="body" @submit.prevent="save(newKey || undefined)">
         <section>
           <h2>Claude</h2>
-          <label class="switch">
-            <input type="checkbox" :checked="chat" @change="toggleChat" />
-            <span class="track"><span class="knob" /></span>
-            <span class="switch-text">
-              Modo chat <span class="badge">experimental</span>
-              <span class="hint">
-                Mostra o botão <b>Chat</b> na barra de cima quando o Claude está rodando na aba. Ele troca o terminal por uma tela de
-                conversa, continuando a mesma sessão; o botão <b>Terminal</b> volta. Se algo der errado no chat, volte pro terminal e
-                compare.
-              </span>
-            </span>
-          </label>
-          <p v-if="chatStatus" class="status error">{{ chatStatus }}</p>
           <div class="usage-row">
             <span class="hint">
               <b>Uso na barra de cima</b> (5h, 7d e o do Fable nas contas Max):
@@ -329,61 +301,6 @@ input.short {
 }
 .usage-row .hint {
   flex: 1;
-}
-.switch {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  cursor: pointer;
-}
-.switch input {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
-}
-.track {
-  position: relative;
-  flex-shrink: 0;
-  width: 30px;
-  height: 17px;
-  margin-top: 1px;
-  border-radius: 9px;
-  background: var(--active);
-  transition: background 0.15s;
-}
-.knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 13px;
-  height: 13px;
-  border-radius: 50%;
-  background: var(--fg-muted);
-  transition: transform 0.15s, background 0.15s;
-}
-.switch input:checked + .track {
-  background: color-mix(in srgb, var(--claude) 45%, transparent);
-}
-.switch input:checked + .track .knob {
-  transform: translateX(13px);
-  background: var(--claude);
-}
-.switch input:focus-visible + .track {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-.switch-text {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.badge {
-  margin-left: 4px;
-  padding: 1px 6px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--yellow) 18%, transparent);
-  color: var(--yellow);
-  font-size: 10.5px;
 }
 footer {
   display: flex;
