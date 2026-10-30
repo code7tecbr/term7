@@ -36,6 +36,7 @@ pub fn run() {
             claude::claude_mcp_list,
             suggest::claude_suggestions,
             agents::claude_agents,
+            agents::claude_agent_steps,
             files::read_text_file,
             files::resolve_paths,
             files::pick_files,

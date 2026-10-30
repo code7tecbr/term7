@@ -11,6 +11,7 @@ import BranchPicker from "./components/BranchPicker.vue";
 import McpMenu from "./components/McpMenu.vue";
 import TopBar from "./components/TopBar.vue";
 import AgentsMenu from "./components/AgentsMenu.vue";
+import AgentSteps from "./components/AgentSteps.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
 import { loadSettings, pickFiles, shellQuote, voiceCancel, voiceStart, voiceStop } from "./lib/settings";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -238,6 +239,10 @@ function authenticateMcp() {
 // ---- subagentes do Claude da aba ativa (menu "Agentes" da barra de cima) ----
 const agents = ref<Agent[] | null>(null);
 const agentsOpen = ref(false);
+/** Subagente aberto no popup de detalhe. */
+const agentView = ref<string | null>(null);
+const viewedAgent = computed(() => agents.value?.find((a) => a.id === agentView.value));
+const agentSession = computed(() => (activeTab.value ? sessions.get(activeTab.value.id)?.id : undefined));
 let agentsAt = 0;
 
 /** Rápido com o menu aberto ou agente rodando; senão, de vez em quando (pra o botão aparecer). */
@@ -248,7 +253,7 @@ async function pollAgents() {
     agents.value = null;
     return;
   }
-  const busy = agentsOpen.value || agents.value?.some((a) => a.status === "running");
+  const busy = agentsOpen.value || agentView.value || agents.value?.some((a) => a.status === "running");
   if (!busy && Date.now() - agentsAt < 10_000) return;
   agentsAt = Date.now();
   agents.value = await claudeAgents(session.id).catch(() => agents.value);
@@ -256,7 +261,7 @@ async function pollAgents() {
 const agentsTimer = setInterval(pollAgents, 2000);
 watch(
   () => [activeTab.value?.id, activeTab.value?.process],
-  () => ((agents.value = null), (agentsAt = 0), pollAgents()),
+  () => ((agents.value = null), (agentView.value = null), (agentsAt = 0), pollAgents()),
 );
 
 // Fechou o Claude ou trocou de aba: os menus não fazem mais sentido.
@@ -651,7 +656,19 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
       @open-tab="popupToTab"
     />
     <SettingsPanel v-if="settingsOpen" @close="settingsOpen = false" />
-    <AgentsMenu v-if="agentsOpen && agents?.length" :agents="agents" @close="agentsOpen = false" />
+    <AgentsMenu
+      v-if="agentsOpen && agents?.length"
+      :agents="agents"
+      @close="agentsOpen = false"
+      @open="(id) => ((agentView = id), (agentsOpen = false))"
+    />
+    <AgentSteps
+      v-if="viewedAgent && agentSession !== undefined"
+      :key="viewedAgent.id"
+      :agent="viewedAgent"
+      :session="agentSession"
+      @close="agentView = null"
+    />
     <McpMenu
       v-if="mcpOpen && activeTab"
       :servers="activeMcp?.servers ?? null"
