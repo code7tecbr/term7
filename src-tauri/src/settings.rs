@@ -49,8 +49,6 @@ impl Default for VoiceSettings {
 #[serde(default)]
 pub struct Settings {
     pub voice: VoiceSettings,
-    /// Modo chat do Claude (experimental): mostra o botão que troca o terminal pelo chat.
-    pub claude_chat: bool,
 }
 
 /// O que o frontend vê: tudo, menos a chave.
@@ -58,7 +56,6 @@ pub struct Settings {
 pub struct SettingsView {
     voice: VoiceSettings,
     has_api_key: bool,
-    claude_chat: bool,
 }
 
 fn path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -84,7 +81,7 @@ fn view(s: Settings) -> SettingsView {
     let has_api_key = !s.voice.api_key.is_empty();
     let mut voice = s.voice;
     voice.api_key.clear();
-    SettingsView { voice, has_api_key, claude_chat: s.claude_chat }
+    SettingsView { voice, has_api_key }
 }
 
 #[tauri::command]
@@ -100,13 +97,6 @@ pub fn settings_save(app: AppHandle, mut voice: VoiceSettings, api_key: Option<S
         None => load(&app).voice.api_key,
     };
     let settings = Settings { voice, ..load(&app) };
-    save(&app, &settings)?;
-    Ok(view(settings))
-}
-
-#[tauri::command]
-pub fn settings_set_chat(app: AppHandle, enabled: bool) -> Result<SettingsView, String> {
-    let settings = Settings { claude_chat: enabled, ..load(&app) };
     save(&app, &settings)?;
     Ok(view(settings))
 }

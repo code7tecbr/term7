@@ -13,8 +13,6 @@ export interface VoiceSettings {
 export interface SettingsView {
   voice: VoiceSettings;
   has_api_key: boolean;
-  /** Modo chat do Claude (experimental). */
-  claude_chat: boolean;
 }
 
 export const loadSettings = () => invoke<SettingsView>("settings_load");
@@ -22,7 +20,6 @@ export const loadSettings = () => invoke<SettingsView>("settings_load");
 export const saveSettings = (voice: VoiceSettings, apiKey?: string) =>
   invoke<SettingsView>("settings_save", { voice, apiKey: apiKey ?? null });
 
-export const setChatMode = (enabled: boolean) => invoke<SettingsView>("settings_set_chat", { enabled });
 
 /** Serviços conhecidos; qualquer API compatível com a da OpenAI funciona. */
 export const VOICE_PRESETS = [
