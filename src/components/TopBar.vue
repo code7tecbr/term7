@@ -39,10 +39,15 @@ function untilReset(w: UsageWindow) {
   return h < 24 ? ` · reinicia em ${h}h${String(m % 60).padStart(2, "0")}` : ` · reinicia em ${Math.floor(h / 24)}d ${h % 24}h`;
 }
 
+/** 1000000 -> "1M", 200000 -> "200 mil". */
+const tokens = (n: number) => (n >= 1_000_000 ? `${+(n / 1_000_000).toFixed(1)}M` : `${Math.round(n / 1000)} mil`);
+
 const usageTitle = computed(() => {
   const u = props.usage;
   if (!u) return "";
-  const lines = u.windows.map((w) => `${usageLabel(w.key)}: ${Math.round(w.used)}% usado${untilReset(w)}`);
+  const ctx = u.context;
+  const lines = ctx ? [`Contexto desta sessão: ${Math.round(ctx.used)}% usado${ctx.size ? ` de ${tokens(ctx.size)} tokens` : ""}`] : [];
+  lines.push(...u.windows.map((w) => `${usageLabel(w.key)}: ${Math.round(w.used)}% usado${untilReset(w)}`));
   if (u.updated) {
     const ago = Math.max(0, Math.round((Date.now() / 1000 - u.updated) / 60));
     lines.push(ago < 1 ? "Atualizado agora" : `Atualizado há ${ago}min (muda a cada resposta do Claude)`);
@@ -96,13 +101,16 @@ const mcpCounts = computed(() => {
         <button
           v-if="!usage.installed"
           class="btn"
-          :title="`Mostra aqui o uso da assinatura (5h e 7d). Coloca o term7 na frente da linha de status em ${usage.settings_path}; a sua linha de status continua igual. Dá pra desfazer nas Configurações.`"
+          :title="`Mostra aqui o uso da assinatura (contexto, 5h, 7d e os limites por modelo, como o do Fable). Coloca o term7 na frente da linha de status em ${usage.settings_path}; a sua linha de status continua igual. Dá pra desfazer nas Configurações.`"
           @click="$emit('setupUsage')"
         >
           <span class="muted">Uso</span><span class="label">ativar</span>
         </button>
-        <span v-else-if="usage.windows.length" class="usage" :title="usageTitle">
+        <span v-else-if="usage.windows.length || usage.context" class="usage" :title="usageTitle">
           <svg class="spark" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M8 1v14M1 8h14M3.05 3.05l9.9 9.9M12.95 3.05l-9.9 9.9M4.6 1.8l2.3 4.4M11.4 14.2l-2.3-4.4M14.2 4.6 9.8 6.9M1.8 11.4l4.4-2.3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
+          <span v-if="usage.context" class="win ctx" :class="level(usage.context.used)">
+            ctx <b>{{ Math.round(usage.context.used) }}%</b>
+          </span>
           <span v-for="w in usage.windows" :key="w.key" class="win" :class="level(w.used)">
             {{ usageLabel(w.key) }} <b>{{ Math.round(w.used) }}%</b>
           </span>
@@ -203,6 +211,10 @@ const mcpCounts = computed(() => {
 .win b {
   color: var(--fg);
   font-weight: 600;
+}
+.win.ctx {
+  padding-right: 8px;
+  border-right: 1px solid var(--border);
 }
 .usage .spark {
   flex-shrink: 0;
