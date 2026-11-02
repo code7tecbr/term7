@@ -101,6 +101,8 @@ export interface ClaudeUsage {
   /** O term7 está no statusLine desse Claude (é de lá que vêm os números). */
   installed: boolean;
   windows: UsageWindow[];
+  /** Contexto usado pela sessão da aba; size em tokens. */
+  context: { used: number; size: number | null } | null;
   updated: number | null;
   settings_path: string;
 }
