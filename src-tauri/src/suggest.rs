@@ -75,8 +75,15 @@ fn session_info(pid: u32, proc: &Proc) -> Option<(PathBuf, Value, String)> {
 pub(crate) fn transcript(pid: u32, proc: &Proc) -> Option<PathBuf> {
     let (config, info, id) = session_info(pid, proc)?;
     let cwd = info.get("cwd").and_then(Value::as_str).map(str::to_string).unwrap_or_else(|| proc.cwd.to_string_lossy().into_owned());
-    let path = config.join("projects").join(project_slug(&cwd)).join(format!("{id}.jsonl"));
-    path.exists().then_some(path)
+    let projects = config.join("projects");
+    let name = format!("{id}.jsonl");
+    let path = projects.join(project_slug(&cwd)).join(&name);
+    if path.exists() {
+        return Some(path);
+    }
+    // O `cwd` do sessions/<pid>.json acompanha o `cd` dentro do Claude, mas o
+    // histórico fica na pasta onde a sessão começou: procura nas outras.
+    std::fs::read_dir(projects).ok()?.flatten().map(|e| e.path().join(&name)).find(|p| p.exists())
 }
 
 fn read_tail(path: &Path) -> Option<String> {
