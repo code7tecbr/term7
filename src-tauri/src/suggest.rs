@@ -71,6 +71,11 @@ fn session_info(pid: u32, proc: &Proc) -> Option<(PathBuf, Value, String)> {
     Some((config, info, id))
 }
 
+/// Id da sessão desse processo do Claude.
+pub(crate) fn session_id(pid: u32, proc: &Proc) -> Option<String> {
+    session_info(pid, proc).map(|(_, _, id)| id)
+}
+
 /// Histórico da sessão desse processo do Claude.
 pub(crate) fn transcript(pid: u32, proc: &Proc) -> Option<PathBuf> {
     let (config, info, id) = session_info(pid, proc)?;

@@ -443,17 +443,22 @@ fn run_claude(exe: &Path, cwd: &Path, env: &[(String, String)], args: &[&str], t
     Ok(out)
 }
 
-/// Checa os MCPs do projeto como o Claude da aba faria: mesmo binário,
-/// ambiente (CLAUDE_CONFIG_DIR) e pasta. Um `claude mcp get` por servidor, em paralelo.
-fn mcp_list(foreground: u32, global: bool) -> Result<Vec<McpServer>, String> {
-    let comm = std::fs::read_to_string(format!("/proc/{foreground}/comm")).unwrap_or_default();
+/// Binário, pasta e ambiente do Claude da aba, pra rodar outro igual a ele.
+pub(crate) struct ClaudeProc {
+    pub(crate) exe: PathBuf,
+    pub(crate) cwd: PathBuf,
+    pub(crate) env: Vec<(String, String)>,
+}
+
+pub(crate) fn claude_proc(pid: u32) -> Result<ClaudeProc, String> {
+    let comm = std::fs::read_to_string(format!("/proc/{pid}/comm")).unwrap_or_default();
     if comm.trim() != "claude" {
         return Err("o Claude não está rodando nesta aba".into());
     }
-    let exe = std::fs::read_link(format!("/proc/{foreground}/exe")).map_err(|e| e.to_string())?;
-    let cwd = std::fs::read_link(format!("/proc/{foreground}/cwd")).map_err(|e| e.to_string())?;
-    let environ = std::fs::read(format!("/proc/{foreground}/environ")).map_err(|e| e.to_string())?;
-    let env: Vec<(String, String)> = environ
+    let exe = std::fs::read_link(format!("/proc/{pid}/exe")).map_err(|e| e.to_string())?;
+    let cwd = std::fs::read_link(format!("/proc/{pid}/cwd")).map_err(|e| e.to_string())?;
+    let environ = std::fs::read(format!("/proc/{pid}/environ")).map_err(|e| e.to_string())?;
+    let env = environ
         .split(|&b| b == 0)
         .filter_map(|var| {
             let (k, v) = std::str::from_utf8(var).ok()?.split_once('=')?;
@@ -461,6 +466,13 @@ fn mcp_list(foreground: u32, global: bool) -> Result<Vec<McpServer>, String> {
             (k != MARKER).then(|| (k.to_string(), v.to_string()))
         })
         .collect();
+    Ok(ClaudeProc { exe, cwd, env })
+}
+
+/// Checa os MCPs do projeto como o Claude da aba faria: mesmo binário,
+/// ambiente (CLAUDE_CONFIG_DIR) e pasta. Um `claude mcp get` por servidor, em paralelo.
+fn mcp_list(foreground: u32, global: bool) -> Result<Vec<McpServer>, String> {
+    let ClaudeProc { exe, cwd, env } = claude_proc(foreground)?;
     let var = |name: &str| env.iter().find(|(k, _)| k == name).map(|(_, v)| PathBuf::from(v));
     let home = var("HOME");
     let config_file = match var("CLAUDE_CONFIG_DIR") {
