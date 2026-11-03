@@ -1,51 +1,38 @@
-# Dependabot: PRs semanais de atualização, agrupados por ecossistema, contra a dev.
-# Os alertas e as correções de segurança estão ligados nas configurações do repo.
+# Dependabot só pra alertas: nada de PR a cada versão nova. Com o limite 0 as
+# atualizações de rotina ficam desligadas, mas as correções de segurança (ligadas
+# nas configurações do repo) continuam abrindo PR contra a dev, com este prefixo.
 version: 2
 updates:
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
-      day: monday
     target-branch: dev
+    open-pull-requests-limit: 0
     commit-message:
-      prefix: chore
+      prefix: fix
       include: scope
-    open-pull-requests-limit: 5
     ignore:
       # O vue-tsc não suporta o TypeScript 7 (ver CLAUDE.md).
       - dependency-name: typescript
         update-types: [version-update:semver-major]
-    groups:
-      # O pacote npm do Tauri anda junto com o crate: um sem o outro quebra o build.
-      tauri:
-        patterns: ["@tauri-apps/*"]
-      npm:
-        patterns: ["*"]
-        exclude-patterns: ["@tauri-apps/*"]
 
   - package-ecosystem: cargo
     directory: /src-tauri
     schedule:
       interval: weekly
-      day: monday
     target-branch: dev
+    open-pull-requests-limit: 0
     commit-message:
-      prefix: chore
+      prefix: fix
       include: scope
-    open-pull-requests-limit: 5
-    groups:
-      cargo:
-        patterns: ["*"]
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: monthly
     target-branch: dev
+    open-pull-requests-limit: 0
     commit-message:
-      prefix: chore
+      prefix: fix
       include: scope
-    groups:
-      actions:
-        patterns: ["*"]
