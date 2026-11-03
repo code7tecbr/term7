@@ -16,6 +16,10 @@ export const commentsFor = (tab: Tab, root: string, path: string) =>
 
 export const lines = (c: Pick<ReviewComment, "from" | "to">) => (c.from === c.to ? `${c.from}` : `${c.from}-${c.to}`);
 
+/** Onde o comentário aponta, como aparece na lista e no prompt. */
+export const where = (c: Pick<ReviewComment, "from" | "to" | "removed">, path: string) =>
+  c.removed ? `${path}:${c.removed.at} (trecho removido; linhas ${lines(c)} no último commit)` : `${path}:${lines(c)}`;
+
 /** Caminho como o Claude da aba enxerga: relativo à pasta dele quando dá, senão absoluto. */
 function displayPath(c: ReviewComment, cwd: string | null) {
   const abs = `${c.root}/${c.path}`.replace(/^\/\//, "/");
@@ -31,7 +35,7 @@ export function reviewPrompt(tab: Tab) {
     const code = c.code.split("\n");
     const shown = code.length > MAX_CODE_LINES ? [...code.slice(0, MAX_CODE_LINES), "…"] : code;
     const fence = c.code.includes("```") ? "~~~~" : "```";
-    return [`${displayPath(c, tab.cwd)}:${lines(c)}`, fence, ...shown, fence, ...c.text.trim().split("\n").map((l) => `> ${l}`)].join("\n");
+    return [where(c, displayPath(c, tab.cwd)), fence, ...shown, fence, ...c.text.trim().split("\n").map((l) => `> ${l}`)].join("\n");
   });
   return `Comentários de revisão:\n\n${parts.join("\n\n")}\n`;
 }
