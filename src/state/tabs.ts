@@ -61,6 +61,8 @@ export interface ReviewComment {
   /** Código do trecho, como estava ao comentar. */
   code: string;
   text: string;
+  /** Trecho apagado (modo alterações): from/to são linhas do último commit e `at` é a linha atual onde ele ficava. */
+  removed?: { at: number };
 }
 
 export interface Tab {
