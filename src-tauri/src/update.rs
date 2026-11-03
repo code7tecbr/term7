@@ -8,6 +8,7 @@ use std::{
 };
 
 use serde::Serialize;
+use tauri::Manager;
 
 const REPO: &str = "code7tecbr/term7";
 
@@ -66,13 +67,20 @@ pub async fn update_check(app: tauri::AppHandle) -> Result<UpdateInfo, String> {
 
 /// Baixa o .deb da versão e instala. O term7 aberto continua rodando a versão
 /// antiga até reiniciar.
+///
+/// Devolve `Some(comando)` quando o sistema não tem janela de senha pra este
+/// processo: no COSMIC, o app aberto pela dock fica fora da sessão de login e o
+/// pkexec cai num pedido de senha em texto, sem terminal. Aí o comando com
+/// `sudo` vai pro terminal de baixo, e o .deb fica no cache até lá.
 #[tauri::command]
-pub async fn update_install(version: String) -> Result<(), String> {
+pub async fn update_install(app: tauri::AppHandle, version: String) -> Result<Option<String>, String> {
     if !version.chars().all(|c| c.is_ascii_digit() || c == '.') {
         return Err("versão inválida".into());
     }
+    // No cache do usuário, não no /tmp: outro usuário não consegue trocar o .deb que o sudo vai instalar.
+    let cache = app.path().app_cache_dir().map_err(|e| e.to_string())?;
     tauri::async_runtime::spawn_blocking(move || {
-        let dir = std::env::temp_dir().join(format!("term7-update-{}", std::process::id()));
+        let dir = cache.join("update");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let deb = format!("term7_{version}_amd64.deb");
@@ -87,14 +95,18 @@ pub async fn update_install(version: String) -> Result<(), String> {
             .stdin(Stdio::null())
             .output()
             .map_err(|e| e.to_string());
-        let _ = std::fs::remove_dir_all(&dir);
         let out = out?;
+        let err = String::from_utf8_lossy(&out.stderr);
+        if out.status.code() == Some(127) && err.contains("textual authentication agent") {
+            let quoted = format!("'{}'", path.to_string_lossy().replace('\'', "'\\''"));
+            return Ok(Some(format!("sudo apt-get install -y --allow-downgrades {quoted} && rm -f {quoted}")));
+        }
+        let _ = std::fs::remove_dir_all(&dir);
         match out.status.code() {
-            Some(0) => Ok(()),
+            Some(0) => Ok(None),
             // 126/127: a janela de senha foi cancelada ou recusada.
             Some(126 | 127) => Err("instalação cancelada".into()),
             _ => {
-                let err = String::from_utf8_lossy(&out.stderr);
                 let last = err.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("falhou");
                 Err(format!("o apt falhou: {}", last.trim()))
             }

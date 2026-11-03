@@ -20,7 +20,7 @@ const props = defineProps<{
   /** Mensagem temporária (ex.: resultado de ativar os avisos). */
   note: string | null;
 }>();
-defineEmits<{ toggleDiff: []; togglePanel: []; pickBranch: []; githubLogin: []; installClaudeHooks: [] }>();
+const emit = defineEmits<{ toggleDiff: []; togglePanel: []; pickBranch: []; githubLogin: []; installClaudeHooks: []; runInPanel: [command: string] }>();
 
 const open = (url: string) => openUrl(url).catch(() => {});
 
@@ -43,6 +43,8 @@ function openRelease() {
 // Confere ao abrir e a cada 6 h. Build local ("dev") não confere: não tem pra quê.
 const update = ref<UpdateInfo | null>(null);
 const updating = ref<"idle" | "installing" | "installed">("idle");
+/** A instalação foi pro terminal de baixo (sem janela de senha pro app). */
+const manual = ref(false);
 const updateError = ref<string | null>(null);
 
 async function refreshUpdate() {
@@ -59,7 +61,11 @@ async function runUpdate() {
   updating.value = "installing";
   updateError.value = null;
   try {
-    await installUpdate(u.latest);
+    const command = await installUpdate(u.latest);
+    if (command) {
+      manual.value = true;
+      emit("runInPanel", `${command}\r`);
+    }
     updating.value = "installed";
   } catch (e) {
     updating.value = "idle";
@@ -74,6 +80,8 @@ const updateLabel = computed(() => {
 });
 const updateTitle = computed(() => {
   if (updateError.value) return `Não deu certo: ${updateError.value}. Clique pra tentar de novo.`;
+  if (updating.value === "installed" && manual.value)
+    return "O sistema não abriu a janela de senha pro term7: digite a senha no terminal de baixo. Quando o apt terminar, clique pra reiniciar.";
   if (updating.value === "installed") return "Instalada. Reinicia o term7 (as abas voltam, mas os programas abertos nelas são encerrados).";
   return "Baixa o .deb da release e instala (o sistema pede a senha).";
 });

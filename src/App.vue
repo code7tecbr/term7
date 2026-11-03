@@ -713,6 +713,7 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
       @toggle-panel="togglePanel"
       @pick-branch="pickerOpen = !pickerOpen"
       @github-login="githubLogin"
+      @run-in-panel="typeInPanel"
       @install-claude-hooks="installClaudeHooks"
     />
 
