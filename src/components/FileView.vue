@@ -5,7 +5,7 @@ import { Compartment, EditorState, RangeSetBuilder, type Extension } from "@code
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import { LanguageDescription, syntaxHighlighting } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
-import { unifiedMergeView } from "@codemirror/merge";
+import { getChunks, getOriginalDoc, unifiedMergeView } from "@codemirror/merge";
 import { oneDarkHighlightStyle } from "@codemirror/theme-one-dark";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
@@ -26,10 +26,12 @@ let view: EditorView | undefined;
 const active = computed(() => props.file);
 
 // ---- comentários de revisão ----
+/** Trecho apagado selecionado: linha atual onde ele ficava e o código removido. */
+type Removed = { at: number; code: string };
 /** Linhas selecionadas no editor (o botão "Comentar" aparece com seleção). */
-const selection = ref<{ from: number; to: number } | null>(null);
+const selection = ref<{ from: number; to: number; removed?: Removed } | null>(null);
 /** Caixa de comentário aberta pras linhas selecionadas. */
-const draft = ref<{ from: number; to: number; text: string } | null>(null);
+const draft = ref<{ from: number; to: number; removed?: Removed; text: string } | null>(null);
 const draftBox = ref<HTMLTextAreaElement>();
 const comments = computed(() => commentsFor(props.tab, props.file.root, props.file.path));
 const commentsSlot = new Compartment();
@@ -38,13 +40,43 @@ const trackSelection = EditorView.updateListener.of((u) => {
   if (!u.selectionSet && !u.docChanged) return;
   const sel = u.state.selection.main;
   if (sel.empty) {
-    selection.value = null;
+    selection.value = removedSelection();
     return;
   }
   // Seleção que termina no começo de uma linha não inclui essa linha.
   const end = sel.to > sel.from && u.state.doc.lineAt(sel.to).from === sel.to ? sel.to - 1 : sel.to;
   selection.value = { from: u.state.doc.lineAt(sel.from).number, to: u.state.doc.lineAt(end).number };
 });
+
+/**
+ * Seleção dentro de um trecho apagado (modo alterações). Esse trecho é um widget
+ * do merge view, fora do documento: o CodeMirror não vê a seleção, então ela é
+ * lida do DOM e convertida pras linhas do último commit.
+ */
+function removedSelection(): typeof selection.value {
+  const sel = document.getSelection();
+  if (!view || !sel || sel.isCollapsed || !sel.anchorNode || !sel.focusNode) return null;
+  const chunkOf = (n: Node) => (n instanceof Element ? n : n.parentElement)?.closest(".cm-deletedChunk") ?? null;
+  const dom = chunkOf(sel.anchorNode);
+  if (!dom || dom !== chunkOf(sel.focusNode) || !view.dom.contains(dom)) return null;
+  const rows = [...dom.querySelectorAll(".cm-deletedLine")];
+  const picked = rows.map((row, i) => (sel.containsNode(row, true) ? i : -1)).filter((i) => i >= 0);
+  if (!picked.length) return null;
+  const pos = view.posAtDOM(dom);
+  const chunk = getChunks(view.state)?.chunks.find((c) => c.fromB === pos);
+  if (!chunk) return null;
+  const first = getOriginalDoc(view.state).lineAt(chunk.fromA).number;
+  const [i0, i1] = [picked[0], picked[picked.length - 1]];
+  const code = rows.slice(i0, i1 + 1).map((r) => r.textContent ?? "").join("\n");
+  return { from: first + i0, to: first + i1, removed: { at: view.state.doc.lineAt(pos).number, code } };
+}
+
+// O CodeMirror nem sempre gera update quando a seleção fica só no widget.
+function onSelectionChange() {
+  const removed = removedSelection();
+  if (removed) selection.value = removed;
+  else if (selection.value?.removed) selection.value = null;
+}
 
 class CommentWidget extends WidgetType {
   constructor(readonly comment: ReviewComment) {
@@ -77,6 +109,13 @@ function commentDecorations(): Extension {
   const doc = view.state.doc;
   const marks: { pos: number; deco: Decoration }[] = [];
   for (const c of comments.value) {
+    if (c.removed) {
+      // Fica logo acima do trecho apagado, que é desenhado antes da linha `at`.
+      const at = Math.min(c.removed.at, doc.lines);
+      const deco = Decoration.widget({ widget: new CommentWidget(c), block: true, side: at > 1 ? 1 : -1 });
+      marks.push({ pos: at > 1 ? doc.line(at - 1).to : 0, deco });
+      continue;
+    }
     const from = Math.min(c.from, doc.lines);
     const to = Math.min(c.to, doc.lines);
     for (let n = from; n <= to; n++) marks.push({ pos: doc.line(n).from, deco: Decoration.line({ class: "cm-commented" }) });
@@ -103,9 +142,12 @@ function saveComment() {
   const d = draft.value;
   if (!d || !view || !d.text.trim()) return;
   const doc = view.state.doc;
-  const code = doc.sliceString(doc.line(d.from).from, doc.line(Math.min(d.to, doc.lines)).to);
-  addComment(props.tab, { root: props.file.root, path: props.file.path, from: d.from, to: d.to, code, text: d.text.trim() });
+  const base = { root: props.file.root, path: props.file.path, from: d.from, to: d.to, text: d.text.trim() };
+  if (d.removed) addComment(props.tab, { ...base, code: d.removed.code, removed: { at: d.removed.at } });
+  else addComment(props.tab, { ...base, code: doc.sliceString(doc.line(d.from).from, doc.line(Math.min(d.to, doc.lines)).to) });
   draft.value = null;
+  document.getSelection()?.removeAllRanges();
+  selection.value = null;
   view.dispatch({ selection: { anchor: view.state.selection.main.head } });
 }
 
@@ -271,10 +313,14 @@ watch(
 
 onMounted(() => {
   view = new EditorView({ parent: host.value! });
+  document.addEventListener("selectionchange", onSelectionChange);
   load();
 });
 
-onBeforeUnmount(() => view?.destroy());
+onBeforeUnmount(() => {
+  document.removeEventListener("selectionchange", onSelectionChange);
+  view?.destroy();
+});
 
 </script>
 
@@ -287,10 +333,10 @@ onBeforeUnmount(() => view?.destroy());
       <div ref="host" class="editor" />
       <button v-if="selection && !draft" class="comment-btn" title="Comentar o trecho pra mandar pro Claude desta aba" @mousedown.prevent @click="startComment">
         <svg viewBox="0 0 16 16" width="13" height="13"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" /></svg>
-        Comentar {{ selection.from === selection.to ? "linha" : "linhas" }} {{ lines(selection) }}
+        Comentar {{ selection.removed ? "trecho removido" : selection.from === selection.to ? "linha" : "linhas" }} {{ selection.removed ? "" : lines(selection) }}
       </button>
       <div v-if="draft" class="draft">
-        <div class="draft-head">Comentário · {{ draft.from === draft.to ? "linha" : "linhas" }} {{ lines(draft) }}</div>
+        <div class="draft-head">Comentário · {{ draft.removed ? `trecho removido (linhas ${lines(draft)} no último commit)` : `${draft.from === draft.to ? "linha" : "linhas"} ${lines(draft)}` }}</div>
         <textarea ref="draftBox" v-model="draft.text" rows="3" placeholder="O que o Claude deve fazer aqui?" @keydown="onDraftKey" />
         <div class="draft-foot">
           <span class="hint">Ctrl+Enter adiciona · Esc cancela</span>

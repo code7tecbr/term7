@@ -2,7 +2,7 @@
 import { computed, ref } from "vue";
 import type { ChangeKind, GitStatus } from "../lib/git";
 import { closeFile, openFile, showTerminal } from "../state/editor";
-import { lines, removeComment } from "../state/review";
+import { removeComment, where } from "../state/review";
 import { canPreview, tabTitle, type FileMode, type OpenFile, type ReviewComment, type Tab } from "../state/tabs";
 
 /** Abas da área principal: o terminal e os arquivos abertos, como no VS Code. */
@@ -12,7 +12,7 @@ const emit = defineEmits<{ sendReview: [] }>();
 const reviewOpen = ref(false);
 
 function goToComment(c: ReviewComment) {
-  openFile({ root: c.root, path: c.path, origPath: null, line: c.from }, props.tab);
+  openFile({ root: c.root, path: c.path, origPath: null, line: c.removed?.at ?? c.from }, props.tab);
   reviewOpen.value = false;
 }
 
@@ -103,7 +103,7 @@ const modes = computed(() => {
       <div v-if="reviewOpen" class="review-menu">
         <ul>
           <li v-for="c in tab.review" :key="c.id" @click="goToComment(c)">
-            <div class="where">{{ c.path }}:{{ lines(c) }}</div>
+            <div class="where">{{ where(c, c.path) }}</div>
             <div class="text">{{ c.text }}</div>
             <button class="x" title="Remover" @click.stop="removeComment(tab, c.id)">
               <svg viewBox="0 0 16 16" width="11" height="11"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
