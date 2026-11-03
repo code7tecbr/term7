@@ -1,0 +1,52 @@
+name: Pacotes descontinuados
+
+# O Dependabot só cobre vulnerabilidades. Uma vez por semana, isto lista os pacotes
+# npm descontinuados e as crates sem manutenção, inseguras ou retiradas (cargo audit),
+# numa issue só: abre, atualiza ou fecha quando a lista zerar. Não muda código.
+on:
+  schedule:
+    - cron: "0 11 * * 1" # segunda, 8h em Brasília
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - name: npm
+        run: node .github/scripts/deprecated.mjs package-lock.json > npm.md
+      - name: Rust
+        run: |
+          # Sai com erro quando acha vulnerabilidade; o que importa é o JSON.
+          (cd src-tauri && cargo audit --json > ../audit.json) || true
+          test -s audit.json
+          node .github/scripts/rust-warnings.mjs audit.json src-tauri/Cargo.toml > rust.md
+      - name: Issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Pacotes descontinuados ou sem manutenção"
+          num=$(gh issue list --state open --limit 100 --json number,title --jq ".[] | select(.title == \"$title\") | .number" | head -n 1)
+          if [ -s npm.md ] || [ -s rust.md ]; then
+            {
+              cat npm.md
+              [ -s npm.md ] && [ -s rust.md ] && echo
+              cat rust.md
+              echo
+              echo "_Atualizada toda segunda pelo workflow [Pacotes descontinuados]($RUN_URL); fecha sozinha quando a lista zerar._"
+            } > body.md
+            if [ -n "$num" ]; then gh issue edit "$num" --body-file body.md; else gh issue create --title "$title" --body-file body.md; fi
+          elif [ -n "$num" ]; then
+            gh issue close "$num" --comment "Nenhum pacote descontinuado ou sem manutenção na verificação de hoje."
+          fi
