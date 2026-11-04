@@ -2,12 +2,19 @@
   "name": "term7",
   "private": true,
   "version": "0.0.0-dev",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/code7tecbr/term7"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test": "vitest run",
+    "licenses": "node scripts/third-party.mjs > src-tauri/THIRD_PARTY_LICENSES.md"
   },
   "dependencies": {
     "@codemirror/language": "^6.13.1",
@@ -34,6 +41,7 @@
     "semantic-release": "^25.0.9",
     "typescript": "~5.9",
     "vite": "^8.3.5",
+    "vitest": "~5.0.5",
     "vue-tsc": "^3.3.13"
   }
 }

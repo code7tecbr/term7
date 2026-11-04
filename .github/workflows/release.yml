@@ -37,7 +37,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # 2. Compila o .deb e anexa direto na release (sem upload de artifact do Actions).
+  # 2. Roda os testes, compila o .deb e anexa direto na release (sem upload de artifact do Actions).
   build-deb:
     needs: version
     # Fora da main o job version é pulado; !cancelled() deixa este rodar mesmo assim.
@@ -95,6 +95,11 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # Testes antes do bundle: o cargo test precisa do dist/ (o Tauri embute o frontend).
+      - run: npm test
+      - run: npm run build
+      - run: cargo test --locked
+        working-directory: src-tauri
       - name: Aplica a versão da release
         if: env.VERSION != ''
         run: npm version "$VERSION" --no-git-tag-version --allow-same-version

@@ -6,15 +6,17 @@ A v1 é web-based de propósito; a v2 planeja migrar pra renderização nativa e
 ## Comandos
 
 ```sh
+npm test                          # testes do frontend (Vitest)
 npm run build                     # type-check (vue-tsc) + build do frontend; rode depois de mexer em src/
 docker compose run --rm build     # compila o .deb em dist-deb/ (mesmo Ubuntu 24.04 do CI)
 scripts/install-local.sh          # instala o .deb em ~/.local (sem sudo) pra testar de verdade
-docker compose run --rm --no-deps dev bash -c "cd src-tauri && cargo check"   # checa só o Rust
+docker compose run --rm --no-deps dev bash -c "cd src-tauri && cargo check && cargo test"   # checa e testa o Rust
 ```
 
 - A máquina de desenvolvimento **não tem Rust instalado**: todo `cargo` roda dentro do container.
 - **Não teste interação pelo Docker** (`compose run dev`): lá não há GPU e tudo fica lento. Compile no container, instale com `scripts/install-local.sh` e abra `~/.local/bin/term7`.
-- Não há testes automatizados ainda. Validação = `npm run build` + `cargo check` sem warnings + testar no app.
+- Validação = `npm test` (Vitest, `src/**/*.test.ts`) + `npm run build` + `cargo check`/`cargo test` sem warnings + testar no app. O CI roda os testes em todo PR.
+- Lógica ou parser novo vem com teste: no Rust, no `mod tests` do arquivo, com dados no formato real (anonimizados).
 
 ## Estrutura
 
@@ -60,7 +62,8 @@ src-tauri/src/
 - **Git em polling** usa `GIT_OPTIONAL_LOCKS=0` pra não disputar o `index.lock` com o usuário.
 - **Botões** que não devem roubar o foco do terminal usam `@mousedown.prevent`.
 - Novos comandos Tauri: registrar em `src-tauri/src/lib.rs`; permissões de janela em `src-tauri/capabilities/default.json`.
-- **Dependências:** TypeScript fica em `~5.9` (o `vue-tsc` não suporta o 7).
+- **Dependências:** TypeScript fica em `~5.9` (o `vue-tsc` não suporta o 7). As licenças das dependências vão no `.deb` (`scripts/third-party.mjs`, roda no build).
+- **Docs públicas** (README, CONTRIBUTING) têm versão em inglês e em português (`*.pt-BR.md`): mude as duas juntas.
 - O Wayland identifica a janela pelo `identifier` (`br.tec.code7.term7`); o `.desktop` em `src-tauri/term7.desktop` precisa manter `StartupWMClass` igual a ele.
 
 ## Git e releases
