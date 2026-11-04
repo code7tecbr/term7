@@ -1,0 +1,68 @@
+name: 🐞 Bug report / Relatar bug
+description: Something doesn't work as expected. / Algo não funciona como deveria.
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please [search existing issues](https://github.com/code7tecbr/term7/issues?q=is%3Aissue) first. English or Portuguese are both fine.
+        Valeu por relatar! [Procure nas issues](https://github.com/code7tecbr/term7/issues?q=is%3Aissue) antes. Pode escrever em português ou inglês.
+
+        **Security issues / Falhas de segurança:** don't open an issue, see [SECURITY.md](https://github.com/code7tecbr/term7/blob/dev/SECURITY.md).
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area / Área
+      options:
+        - Terminal (output, input, links, paths)
+        - Tabs, groups, session / Abas, grupos, sessão
+        - GitHub (PR, checks, actions, branches)
+        - Claude Code (status, agents, MCP, usage, suggestions, review)
+        - Files and explorer / Arquivos e explorador
+        - Voice dictation / Ditado por voz
+        - Update and install / Atualização e instalação
+        - Other / Outra
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened? / O que aconteceu?
+      description: And what did you expect instead? / E o que você esperava?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce / Como reproduzir
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: term7 version / Versão do term7
+      description: Right corner of the status bar. / Canto direito da barra de status.
+      placeholder: v1.17.3
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Distro and desktop / Distro e desktop
+      placeholder: Ubuntu 24.04, GNOME (Wayland)
+    validations:
+      required: true
+  - type: input
+    id: tools
+    attributes:
+      label: gh and claude versions (for integration bugs) / Versões do gh e do claude (bugs de integração)
+      description: "`gh --version` and `claude --version`"
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshots, GIFs or logs / Prints, GIFs ou logs
+      description: Run `term7` from another terminal to see its logs. Hide anything private (anonymous mode helps). / Rode o `term7` de outro terminal pra ver os logs. Esconda o que for privado (o modo anônimo ajuda).

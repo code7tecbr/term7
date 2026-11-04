@@ -11,7 +11,7 @@ export interface PathTarget {
 
 // Caminho com pelo menos uma "/": absoluto, ~/, ./, ../ ou relativo (src/x.ts),
 // com linha e coluna opcionais (src/x.ts:42:7).
-const PATH_RE = /(?:~\/|\.{1,2}\/|\/)?(?:[\w.@+-]+\/)+[\w.@+-]*[\w@+-](?::(\d+))?(?::\d+)?/g;
+export const PATH_RE = /(?:~\/|\.{1,2}\/|\/)?(?:[\w.@+-]+\/)+[\w.@+-]*[\w@+-](?::(\d+))?(?::\d+)?/g;
 const PATH_CHAR = /[\w.@+\/~-]/;
 
 /** Caminhos que já conferimos no disco (o hover repete muito a mesma linha). */

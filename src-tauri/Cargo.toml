@@ -2,6 +2,8 @@
 name = "term7"
 version = "0.1.0"
 description = "Terminal com interface moderna"
+license = "MIT"
+repository = "https://github.com/code7tecbr/term7"
 edition = "2021"
 
 [lib]

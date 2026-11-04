@@ -1,0 +1,34 @@
+name: 💡 Idea / Ideia
+description: Suggest a feature or an improvement. / Sugira uma funcionalidade ou melhoria.
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the [open issues](https://github.com/code7tecbr/term7/issues) first: the roadmap lives there. English or Portuguese are both fine.
+        Confira as [issues abertas](https://github.com/code7tecbr/term7/issues) antes: o roadmap fica lá. Pode escrever em português ou inglês.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does it solve? / Que problema resolve?
+      description: Describe the situation in your workflow. / Descreva a situação no seu dia a dia.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: How would it work? / Como funcionaria?
+      description: What you would see and do in term7. Mockups welcome. / O que você veria e faria no term7. Rascunhos são bem-vindos.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives / Alternativas
+      description: Other ways you considered, or how other tools do it. / Outros jeitos que você pensou, ou como outras ferramentas fazem.
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contribution / Contribuição
+      options:
+        - label: I'd like to implement this. / Quero implementar isso.
