@@ -10,12 +10,13 @@ const fetchSuggestions = (ptyId: number) => invoke<string[]>("claude_suggestions
 
 // Prefixo mínimo pra reconhecer um comando quebrado na borda da tela.
 const MIN_WRAPPED = 16;
-// Dois botões de 3 colunas e um respiro entre eles.
-const WIDTH = 7;
+// Colunas reservadas pros dois botões (pílulas pequenas, alinhadas à esquerda).
+const WIDTH = 6;
 
 const PLAY = '<svg viewBox="0 0 16 16" width="11" height="11"><path d="M5 3.5v9l7-4.5z" fill="currentColor"/></svg>';
+// ⤓: desce pro terminal de baixo.
 const TERMINAL =
-  '<svg viewBox="0 0 16 16" width="12" height="12"><path d="M3 4.5l3.5 3.5L3 11.5M8.5 12h4.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  '<svg viewBox="0 0 16 16" width="11" height="11"><path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3.5 13.5h9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 /** Onde o comando aparece numa linha da tela: coluna logo depois do texto. */
 function findOnLine(text: string, xs: number[], first: string): number | null {
@@ -43,6 +44,8 @@ export function attachSuggestions(term: Terminal, ptyId: () => number | undefine
   const shown = new Map<string, { marker: IMarker; deco: IDecoration }>();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let busy = false;
+  // Pedido que chegou durante uma busca: roda de novo no fim, em vez de se perder.
+  let again = false;
 
   function clear(keep = new Set<string>()) {
     for (const [key, d] of shown) {
@@ -72,8 +75,13 @@ export function attachSuggestions(term: Terminal, ptyId: () => number | undefine
 
   async function scan() {
     const id = ptyId();
-    if (id === undefined || busy) return;
+    if (id === undefined) return;
+    if (busy) {
+      again = true;
+      return;
+    }
     busy = true;
+    again = false;
     try {
       const cmds = await fetchSuggestions(id).catch(() => [] as string[]);
       if (!cmds.length) return clear();
@@ -117,6 +125,7 @@ export function attachSuggestions(term: Terminal, ptyId: () => number | undefine
       clear(keep);
     } finally {
       busy = false;
+      if (again) schedule(50);
     }
   }
 
