@@ -35,8 +35,8 @@ subagentes, os servidores MCP e os limites de uso.
 ## Destaques
 
 **Abas que sabem o que está acontecendo**
-- Abas na lateral com nome, cor e tag de etapa (discovery, spec, design, plan, code, review, rework, test,
-  close/merge), também nos grupos. Arrastar e soltar, recolher grupos, sessão restaurada ao reabrir.
+- Abas na lateral com nome, cor e tag de etapa (discovery, spec, design, plan, code, review,
+  request-change, rework, test, approve, close/merge), também nos grupos. Arrastar e soltar, recolher grupos, sessão restaurada ao reabrir.
 - Terminal inferior por aba (`Ctrl+'`), explorador de arquivos com o status do git (`Ctrl+Shift+G`) e arquivos
   abertos em abas, nos modos *arquivo*, *alterações* (diff com o último commit) e *visualizar* (Markdown/HTML).
 - Links e caminhos de arquivo clicáveis na saída: abrem o arquivo na linha certa.
@@ -44,7 +44,8 @@ subagentes, os servidores MCP e os limites de uso.
 **GitHub**
 - A barra de status mostra a branch, o PR e os checks dele, e as runs das GitHub Actions. Também avisa quando
   você está numa worktree. A troca de branch é feita por ali.
-- Quando o PR é mergeado, a aba ganha a tag close/merge sozinha.
+- A tag da aba acompanha o PR sozinha: request-change quando um review pede alterações, approve quando é
+  aprovado, close/merge quando é mergeado. A troca feita na mão fica até o PR mudar de novo.
 
 **Claude Code**
 - A aba mostra quando o Claude está trabalhando, esperando você ou terminou (via hooks).

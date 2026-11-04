@@ -112,6 +112,18 @@ function fromGh(res: Exclude<GhResult, { kind: "ok" }>): GithubStatus | null {
   return { kind: res.kind };
 }
 
+/**
+ * Resultado do review. O GitHub só preenche o reviewDecision quando a branch
+ * exige aprovação; sem essa regra, vem do último review de cada pessoa.
+ */
+export function reviewDecision(raw: { reviewDecision?: string | null; latestReviews?: { state?: string }[] | null }) {
+  if (raw.reviewDecision) return raw.reviewDecision;
+  const states = (raw.latestReviews ?? []).map((r) => r.state);
+  if (states.includes("CHANGES_REQUESTED")) return "CHANGES_REQUESTED";
+  if (states.includes("APPROVED")) return "APPROVED";
+  return null;
+}
+
 export async function fetchPullRequest(root: string): Promise<GithubStatus | null> {
   const res = await invoke<GhResult>("gh_pr", { root });
   if (res.kind !== "ok") return fromGh(res);
@@ -125,7 +137,7 @@ export async function fetchPullRequest(root: string): Promise<GithubStatus | nul
       isDraft: !!raw.isDraft,
       url: raw.url,
       checks: ((raw.statusCheckRollup ?? []) as RawCheck[]).map(parseCheck),
-      reviewDecision: raw.reviewDecision || null,
+      reviewDecision: reviewDecision(raw),
       reviewRequested: Array.isArray(raw.reviewRequests) && raw.reviewRequests.length > 0,
     },
   };

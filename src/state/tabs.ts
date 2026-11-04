@@ -11,8 +11,10 @@ export const TAGS = [
   { id: "plan", label: "plan", color: "#73daca" },
   { id: "code", label: "code", color: "#7aa2f7" },
   { id: "review", label: "review", color: "#e0af68" },
+  { id: "changes", label: "request-change", color: "#ff5f6d" },
   { id: "rework", label: "rework", color: "#f7768e" },
   { id: "test", label: "test", color: "#9ece6a" },
+  { id: "approve", label: "approve", color: "#3fb950" },
   { id: "merge", label: "close/merge", color: "#bb9af7" },
 ] as const;
 
@@ -20,6 +22,36 @@ export type TagId = (typeof TAGS)[number]["id"];
 export type Tag = (typeof TAGS)[number];
 
 export const findTag = (id: string | null) => TAGS.find((t) => t.id === id) ?? null;
+
+/** O que interessa do PR pra escolher a tag. */
+export interface PrForTag {
+  url: string;
+  state: string;
+  reviewDecision: string | null;
+}
+
+/** Tag que o PR pede: mergeado, aprovado ou com alterações pedidas. */
+export function prTag(pr: PrForTag): TagId | null {
+  if (pr.state === "MERGED") return "merge";
+  if (pr.state !== "OPEN") return null;
+  if (pr.reviewDecision === "CHANGES_REQUESTED") return "changes";
+  if (pr.reviewDecision === "APPROVED") return "approve";
+  return null;
+}
+
+/**
+ * Troca a tag da aba quando o PR muda de situação. Cada situação (PR + tag) só
+ * é aplicada uma vez: quem trocou a tag na mão depois (ex.: pra rework) não é
+ * desfeito no próximo polling, só na próxima mudança do PR.
+ */
+export function syncPrTag(tab: Tab, pr: PrForTag) {
+  const tag = prTag(pr);
+  if (!tag) return;
+  const key = `${pr.url}#${tag}`;
+  if (tab.autoTagged === key) return;
+  tab.autoTagged = key;
+  tab.tag = tag;
+}
 
 export interface Group {
   id: number;
@@ -82,6 +114,8 @@ export interface Tab {
   name: string | null;
   color: string | null;
   tag: TagId | null;
+  /** Última tag posta sozinha pelo PR ("url#tag"), pra não repetir depois de uma troca manual. */
+  autoTagged: string | null;
   /** Arquivos abertos em abas ao lado do terminal. */
   files: OpenFile[];
   /** O que a área principal mostra: -1 = terminal, senão o índice em files. */
@@ -98,7 +132,7 @@ export interface Tab {
 }
 
 export type SavedTab = Pick<Tab, "cwd" | "groupId"> &
-  Partial<Pick<Tab, "name" | "color" | "tag" | "panelOpen" | "panelHeight" | "files" | "view">>;
+  Partial<Pick<Tab, "name" | "color" | "tag" | "autoTagged" | "panelOpen" | "panelHeight" | "files" | "view">>;
 
 function makeTab(fields: Partial<Tab>): Tab {
   return {
@@ -112,6 +146,7 @@ function makeTab(fields: Partial<Tab>): Tab {
     name: null,
     color: null,
     tag: null,
+    autoTagged: null,
     files: [],
     view: -1,
     review: [],
@@ -235,6 +270,7 @@ export function restoreLayout(
         color: t.color ?? null,
         // Ignora tag desconhecida (sessão de outra versão).
         tag: findTag(t.tag ?? null)?.id ?? null,
+        autoTagged: t.autoTagged ?? null,
         files: (t.files ?? []).map((f) => ({
           ...f,
           mode: f.mode === "changes" || (f.mode === "preview" && canPreview(f.path)) ? f.mode : "file",
