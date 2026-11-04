@@ -1,138 +1,128 @@
-# term7
+<p align="center">
+  <img src="src-tauri/icons/128x128@2x.png" width="96" alt="term7 logo" />
+</p>
 
-Terminal com interface moderna, feito com **Tauri 2 + Vue 3 + TypeScript + xterm.js**.
-O backend em Rust abre o shell via [`portable-pty`](https://crates.io/crates/portable-pty)
-e manda a saída em bytes brutos pro frontend, que renderiza com WebGL.
+<h1 align="center">term7</h1>
 
-## Pré-requisitos (Linux)
+<p align="center">
+  A modern Linux terminal built around your GitHub and Claude Code workflow.
+</p>
 
-Pra usar, o term7 precisa do `git` e do [`gh`](https://cli.github.com/) (GitHub CLI): o `git`
-alimenta o painel de alterações e as branches; o `gh` mostra o PR da branch e o estado das actions.
-O `.deb` já declara os dois como dependência, então o `apt` instala junto. Depois, uma vez só:
+<p align="center">
+  <a href="https://github.com/code7tecbr/term7/releases/latest">Download</a>
+  ·
+  <a href="CONTRIBUTING.md">Contributing</a>
+  ·
+  <a href="https://github.com/code7tecbr/term7/issues">Issues</a>
+  ·
+  <a href="README.pt-BR.md">Português</a>
+</p>
 
-```sh
-gh auth login
-```
+<h1></h1>
 
-O `.deb` é compilado no Ubuntu 24.04 e instala no 24.04 ou mais novo (Pop!_OS 24.04 incluído).
-O `gh` dos repositórios do Ubuntu funciona; o do [repositório oficial](https://github.com/cli/cli/blob/trunk/docs/install_linux.md) também.
+## About
 
-Pra desenvolver:
+term7 is a desktop terminal made with **Tauri 2** (Rust backend) and **Vue 3 + TypeScript**, rendering with
+**xterm.js** on WebGL. Besides being a fast terminal with vertical tabs, it understands what is running inside
+each tab: the pull request of your branch, the state of your GitHub Actions, and what Claude Code is doing,
+including its subagents, MCP servers and usage limits.
 
-```sh
-# Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+> [!NOTE]
+> term7 grew out of one developer's daily workflow: **Linux + GitHub (`gh`) + Claude Code**. That combination
+> is used every day and works well. Other setups (other distros, desktops, Git hosts or AI CLIs) are less
+> tested, so bug reports about them are very welcome.
 
-# Bibliotecas do Tauri (Ubuntu/Pop!_OS/Debian)
-sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
-  libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
-```
+## Highlights
 
-## Rodando
+**Tabs that know what is going on**
+- Vertical tabs with name, color and a stage tag (discovery, spec, design, plan, code, review, rework, test,
+  close/merge), also on tab groups. Drag and drop, collapse groups, session restored on reopen.
+- A bottom terminal per tab (`Ctrl+'`), a file explorer with git status (`Ctrl+Shift+G`) and files opened in
+  tabs, with *file*, *changes* (diff against the last commit) and *preview* (Markdown/HTML) modes.
+- Clickable links and file paths in the output: they open the file at the right line.
+
+**GitHub**
+- The status bar shows the branch, the PR and its checks, and the GitHub Actions runs. It also tells you when
+  you are in a worktree. Switch branches from there.
+- When the PR is merged, the tab gets the close/merge tag on its own.
+
+**Claude Code**
+- The tab shows when Claude is working, waiting for you or done (via hooks).
+- Subagents menu, the MCP servers of the tab's project (connected, needs auth, failed) and commands
+  suggested by Claude as ▶ buttons, ready to run in the bottom terminal.
+- Usage in the top bar: context window, 5-hour and weekly limits, and per-model limits.
+- Review comments: select lines of a file or a diff (removed lines included), write what Claude should do, and
+  send them all to the tab's Claude as one paste.
+
+**Also**
+- Voice dictation: any OpenAI-compatible API (Groq is preset) or local [whisper.cpp](https://github.com/ggml-org/whisper.cpp).
+- Anonymous mode: scrambles all text on screen so you can record without exposing anything.
+- In-app updates when a new release comes out.
+
+## Installation
+
+term7 ships as a `.deb` built on Ubuntu 24.04. It installs on Ubuntu 24.04 or newer, including Pop!_OS 24.04.
+
+1. Download the `.deb` from the [latest release](https://github.com/code7tecbr/term7/releases/latest).
+2. Install it. `git` and `gh` come along as dependencies:
+   ```sh
+   sudo apt install ./term7_*.deb
+   ```
+3. Log in to GitHub once, so term7 can show PRs and actions:
+   ```sh
+   gh auth login
+   ```
+
+When a new release is out, **Update to vX** shows up next to the version in the status bar.
+
+## Building from source
+
+You need Node 24+ and either Docker (recommended: no Rust on your machine) or Rust with the Tauri libraries.
 
 ```sh
 npm install
-npm run tauri dev      # abre o app com hot reload
-npm run tauri build    # gera o .deb em src-tauri/target/release/bundle/deb/
+npm test                          # frontend unit tests
+npm run build                     # type-check + frontend build
+docker compose run --rm build     # builds the .deb into dist-deb/ (same Ubuntu 24.04 as CI)
+scripts/install-local.sh          # installs that .deb in ~/.local, no sudo
 ```
 
-## Com Docker (sem instalar Rust na máquina)
+Rust checks and tests also run in the container:
 
 ```sh
-docker compose run --rm build   # gera o .deb em ./dist-deb/ (mesmo ambiente do CI)
-docker compose run --rm dev     # abre o app na sua tela com hot reload
-
-# usando o seu zsh/oh-my-zsh e fontes dentro do container
-docker compose -f compose.yaml -f compose.zsh.yaml run --rm dev
+docker compose run --rm --no-deps dev bash -c "cd src-tauri && cargo check && cargo test"
 ```
 
-> Dentro do container a GPU geralmente não é usada, então a interface fica mais lenta.
-> Pra sentir a velocidade real, instale o `.deb` gerado: `sudo apt install ./dist-deb/term7_*.deb`,
-> ou só pro seu usuário, sem sudo: `scripts/install-local.sh` (`--remove` desinstala).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the native setup, the branch flow and how releases work, and
+[CLAUDE.md](CLAUDE.md) for the code structure and conventions.
 
-## Estrutura
+## Contributing
 
-```
-src/                  frontend Vue
-  components/         TerminalView (xterm.js)
-  lib/pty.ts          ponte com o backend (invoke + Channel)
-  lib/theme.ts        tema padrão
-src-tauri/src/pty.rs  sessões de shell (spawn, write, resize, kill)
-```
+Contributions are welcome. Before opening an issue, [search the existing ones](https://github.com/code7tecbr/term7/issues),
+then use one of the [templates](https://github.com/code7tecbr/term7/issues/new/choose). Pull requests go to the
+`dev` branch. The full flow is in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Versionamento e releases
+Security issues should be reported privately, as described in [SECURITY.md](SECURITY.md).
 
-A versão é calculada pelo [semantic-release](https://semantic-release.gitbook.io) a partir das
-mensagens de commit ([Conventional Commits](https://www.conventionalcommits.org/pt-br/)):
-
-| Commit                         | Versão  |
-|--------------------------------|---------|
-| `fix: ...`                     | patch   |
-| `feat: ...`                    | minor   |
-| `feat!: ...` / `BREAKING CHANGE` | major |
-| `chore:`, `docs:`, `refactor:` | sem release |
-
-As features entram na branch `dev`; a release sai quando a `dev` é mergeada na `main`. A cada
-push na `main`, o workflow `.github/workflows/release.yml` cria a release, compila o `.deb`, anexa
-na release e apaga as releases mais antigas, deixando só a atual + 2 anteriores. Em PR, o mesmo
-workflow só compila o `.deb`, pra mostrar se o build quebra.
-
-A versão vem só da release: o workflow grava ela no `package.json` antes de compilar, e o app
-mostra no canto direito da barra de status (clicar abre a release). No repositório o `package.json`
-fica em `0.0.0-dev`, então um build local aparece como `dev`.
-
-Quando sai uma release nova, aparece **Atualizar pra vX** ao lado da versão: o term7 baixa o `.deb`
-(via `gh`, o repositório é privado) e instala com `pkexec apt-get`, que pede a senha do sistema.
-Depois o botão vira **Reiniciar** (as abas voltam, mas os programas abertos nelas são encerrados).
-Só aparece na versão instalada pelo apt; o build de teste em `~/.local` não confere.
-
-## Ditado por voz e anexos
-
-O microfone da barra de cima grava, transcreve e cola o texto no terminal com o foco (sem Enter).
-Numa aba com o Claude CLI, ele digita `/voice`, o ditado do próprio Claude (Enter liga; depois
-segure Espaço pra falar). A transcrição é configurada na engrenagem:
-
-- **Serviço externo:** qualquer API compatível com a da OpenAI. A Groq já vem preenchida
-  (`whisper-large-v3-turbo`); a chave fica em `~/.local/share/br.tec.code7.term7/settings.json`,
-  com permissão 600, e não volta pra interface depois de salva.
-- **Local:** o `whisper-cli` do [whisper.cpp](https://github.com/ggml-org/whisper.cpp) com um modelo
-  `.bin` baixado (o `small` vai bem em português). Nada sai da máquina.
-
-A gravação usa o `pw-record` (PipeWire) ou o `arecord`. O clipe da barra abre o seletor de arquivos
-e cola os caminhos no terminal; arrastar arquivos pra janela faz o mesmo no terminal em que caem.
-
-## Modo anônimo
-
-O olho da barra de cima embaralha todo o texto da tela, pra gravar sem expor nada: terminal (com
-ou sem o Claude), arquivos, abas, barras, menus e o título da janela. As letras e os números passam
-a desenhar outros caracteres, então a tela parece texto normal, mas não dá pra ler. Várias letras
-usam o mesmo desenho, então também não dá pra decifrar pela gravação. O conteúdo não muda:
-desligou, volta na hora. Imagens não são embaralhadas.
-
-A fonte (`src/assets/term7-anon.woff2`) é gerada a partir da DejaVu Sans Mono por
-`scripts/anon-font.py`.
+If you use Claude Code, the repo includes project skills in `.claude/skills/` that teach it how to build,
+test and contribute to term7.
 
 ## Roadmap
 
-- [x] Abas na lateral, com nome, cor e tag de etapa (discovery, spec, design, plan, code, review, rework, test, close/merge), também nos grupos; PR mergeado marca a aba com close/merge sozinho
-- [x] Grupos de abas (nome, cor, recolher) e arrastar/soltar
-- [x] Sessão restaurada ao reabrir (abas, grupos, pastas)
-- [x] Terminal inferior por aba (`Ctrl+'`)
-- [x] Explorador de arquivos com o status do git (`Ctrl+Shift+G`)
-- [x] Arquivos em abas na área principal, com toggle entre arquivo e alterações
-- [x] Troca de branch pela barra de status
-- [x] PR da branch e estado das actions na barra de status (indica worktree)
-- [x] Avisos do Claude CLI na aba (trabalhando, esperando você, terminou) via hooks
-- [x] Shift+Enter, Ctrl+C copiando seleção e links clicáveis no terminal
-- [x] Servidores MCP do Claude da aba na barra de status (conectados, precisam de autenticação, falharam)
-- [x] Caminhos de arquivo clicáveis na saída (abrem numa aba, na linha certa); Markdown e HTML renderizados
+Planned work lives in the [issues](https://github.com/code7tecbr/term7/issues): command blocks, a command
+palette, themes, file editing, macOS and Windows, and a v2 with native GPU rendering in Rust.
 
-O que falta está nas [issues](https://github.com/code7tecbr/term7/issues):
+## Code of conduct
 
-- **Claude CLI** ([label `claude-cli`](https://github.com/code7tecbr/term7/issues?q=is%3Aissue+label%3Aclaude-cli)):
-  aviso ao terminar ([#8](https://github.com/code7tecbr/term7/issues/8)), Shift+Enter ([#9](https://github.com/code7tecbr/term7/issues/9)), comentar no diff ([#10](https://github.com/code7tecbr/term7/issues/10)), sessão em worktree ([#11](https://github.com/code7tecbr/term7/issues/11))
-- **Terminal:** caminhos clicáveis ([#1](https://github.com/code7tecbr/term7/issues/1)), blocos de comando ([#2](https://github.com/code7tecbr/term7/issues/2)), paleta de comandos ([#3](https://github.com/code7tecbr/term7/issues/3))
-- **Visual:** temas e config ([#4](https://github.com/code7tecbr/term7/issues/4)), ícone definitivo ([#5](https://github.com/code7tecbr/term7/issues/5))
-- **Visualizador:** edição de arquivo ([#6](https://github.com/code7tecbr/term7/issues/6))
-- **Plataformas:** macOS e Windows ([#7](https://github.com/code7tecbr/term7/issues/7))
-- **v2:** renderização nativa em Rust ([#12](https://github.com/code7tecbr/term7/issues/12))
+Everyone is expected to be respectful and kind. See the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## License
+
+term7 is licensed under the [MIT license](LICENSE). The licenses of the bundled open source dependencies are
+installed with the app at `/usr/share/doc/term7/THIRD_PARTY_LICENSES.md`.
+
+Built on the shoulders of [Tauri](https://tauri.app), [xterm.js](https://xtermjs.org), [Vue](https://vuejs.org),
+[CodeMirror](https://codemirror.net) and [portable-pty](https://crates.io/crates/portable-pty), among others.
+
+<sub>Claude is a trademark of Anthropic. GitHub is a trademark of GitHub, Inc. term7 is an independent project,
+not affiliated with or endorsed by either.</sub>
