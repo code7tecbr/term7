@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { activeTab, closeTab, goToTab, moveGroupTo, moveTabTo, newTab, restoreLayout, store, type Group } from "./tabs";
+import { activeTab, closeTab, goToTab, moveGroupTo, moveTabTo, newTab, restoreLayout, store, syncPrTag, type Group } from "./tabs";
 
 const group = (id: number, extra: Partial<Group> = {}): Group => ({ id, name: `g${id}`, color: null, tag: null, collapsed: false, ...extra }) as Group;
 
@@ -112,5 +112,48 @@ describe("arrastar e soltar", () => {
     store.groups.find((g) => g.name === "B")!.collapsed = true;
     goToTab(9);
     expect(activeTab.value?.name).toBe("x");
+  });
+});
+
+describe("syncPrTag", () => {
+  const pr = (state: string, reviewDecision: string | null = null) => ({ url: "https://github.com/o/r/pull/1", state, reviewDecision });
+
+  it("marca approve, request-change e close/merge conforme o PR", () => {
+    const tab = newTab();
+    syncPrTag(tab, pr("OPEN"));
+    expect(tab.tag).toBe(null);
+    syncPrTag(tab, pr("OPEN", "CHANGES_REQUESTED"));
+    expect(tab.tag).toBe("changes");
+    syncPrTag(tab, pr("OPEN", "APPROVED"));
+    expect(tab.tag).toBe("approve");
+    syncPrTag(tab, pr("MERGED", "APPROVED"));
+    expect(tab.tag).toBe("merge");
+  });
+
+  it("não desfaz a troca manual enquanto o PR não muda", () => {
+    const tab = newTab();
+    syncPrTag(tab, pr("OPEN", "CHANGES_REQUESTED"));
+    tab.tag = "rework";
+    syncPrTag(tab, pr("OPEN", "CHANGES_REQUESTED"));
+    expect(tab.tag).toBe("rework");
+    // Novo pedido depois de uma aprovação volta a marcar.
+    syncPrTag(tab, pr("OPEN", "APPROVED"));
+    syncPrTag(tab, pr("OPEN", "CHANGES_REQUESTED"));
+    expect(tab.tag).toBe("changes");
+  });
+
+  it("PR fechado sem merge e review pendente não mexem na tag", () => {
+    const tab = newTab();
+    tab.tag = "code";
+    syncPrTag(tab, pr("CLOSED", "APPROVED"));
+    syncPrTag(tab, pr("OPEN", "REVIEW_REQUIRED"));
+    expect(tab.tag).toBe("code");
+  });
+
+  it("guarda a última troca na sessão", () => {
+    restoreLayout([{ cwd: "/a", groupId: null, tag: "rework", autoTagged: "https://github.com/o/r/pull/1#changes" }], [], 0);
+    const tab = activeTab.value!;
+    syncPrTag(tab, pr("OPEN", "CHANGES_REQUESTED"));
+    expect(tab.tag).toBe("rework");
   });
 });

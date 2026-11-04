@@ -35,8 +35,8 @@ including its subagents, MCP servers and usage limits.
 ## Highlights
 
 **Tabs that know what is going on**
-- Vertical tabs with name, color and a stage tag (discovery, spec, design, plan, code, review, rework, test,
-  close/merge), also on tab groups. Drag and drop, collapse groups, session restored on reopen.
+- Vertical tabs with name, color and a stage tag (discovery, spec, design, plan, code, review, request-change,
+  rework, test, approve, close/merge), also on tab groups. Drag and drop, collapse groups, session restored on reopen.
 - A bottom terminal per tab (`Ctrl+'`), a file explorer with git status (`Ctrl+Shift+G`) and files opened in
   tabs, with *file*, *changes* (diff against the last commit) and *preview* (Markdown/HTML) modes.
 - Clickable links and file paths in the output: they open the file at the right line.
@@ -44,7 +44,8 @@ including its subagents, MCP servers and usage limits.
 **GitHub**
 - The status bar shows the branch, the PR and its checks, and the GitHub Actions runs. It also tells you when
   you are in a worktree. Switch branches from there.
-- When the PR is merged, the tab gets the close/merge tag on its own.
+- The tab tag follows the PR on its own: request-change when a review asks for changes, approve when it is
+  approved, close/merge when it is merged. Changing the tag by hand sticks until the PR changes again.
 
 **Claude Code**
 - The tab shows when Claude is working, waiting for you or done (via hooks).
