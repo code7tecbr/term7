@@ -59,6 +59,8 @@ export interface Group {
   color: string;
   tag: TagId | null;
   collapsed: boolean;
+  /** Grupo deixado de lado por enquanto; as abas dele aparecem pausadas também. */
+  paused: boolean;
 }
 
 /** file = código; changes = com as alterações; preview = Markdown/HTML renderizado. */
@@ -116,6 +118,8 @@ export interface Tab {
   tag: TagId | null;
   /** Última tag posta sozinha pelo PR ("url#tag"), pra não repetir depois de uma troca manual. */
   autoTagged: string | null;
+  /** Aba deixada de lado por enquanto. Vale junto com qualquer tag de etapa. */
+  paused: boolean;
   /** Arquivos abertos em abas ao lado do terminal. */
   files: OpenFile[];
   /** O que a área principal mostra: -1 = terminal, senão o índice em files. */
@@ -132,7 +136,7 @@ export interface Tab {
 }
 
 export type SavedTab = Pick<Tab, "cwd" | "groupId"> &
-  Partial<Pick<Tab, "name" | "color" | "tag" | "autoTagged" | "panelOpen" | "panelHeight" | "files" | "view">>;
+  Partial<Pick<Tab, "name" | "color" | "tag" | "autoTagged" | "paused" | "panelOpen" | "panelHeight" | "files" | "view">>;
 
 function makeTab(fields: Partial<Tab>): Tab {
   return {
@@ -147,6 +151,7 @@ function makeTab(fields: Partial<Tab>): Tab {
     color: null,
     tag: null,
     autoTagged: null,
+    paused: false,
     files: [],
     view: -1,
     review: [],
@@ -258,7 +263,7 @@ export function restoreLayout(
   for (const g of groups) {
     const id = nextGroupId++;
     groupIds.set(g.id, id);
-    store.groups.push({ ...g, id, tag: findTag(g.tag ?? null)?.id ?? null });
+    store.groups.push({ ...g, id, tag: findTag(g.tag ?? null)?.id ?? null, paused: !!g.paused });
   }
   for (const t of tabs) {
     store.tabs.push(
@@ -271,6 +276,7 @@ export function restoreLayout(
         // Ignora tag desconhecida (sessão de outra versão).
         tag: findTag(t.tag ?? null)?.id ?? null,
         autoTagged: t.autoTagged ?? null,
+        paused: !!t.paused,
         files: (t.files ?? []).map((f) => ({
           ...f,
           mode: f.mode === "changes" || (f.mode === "preview" && canPreview(f.path)) ? f.mode : "file",
@@ -377,6 +383,11 @@ export function setTabTag(tabId: number, tag: TagId | null) {
   if (tab) tab.tag = tag;
 }
 
+export function togglePaused(tabId: number) {
+  const tab = findTab(tabId);
+  if (tab) tab.paused = !tab.paused;
+}
+
 export function setTabColor(tabId: number, color: string | null) {
   const tab = findTab(tabId);
   if (tab) tab.color = color;
@@ -430,6 +441,7 @@ export function createGroup(tabId: number) {
     color: COLORS[(id - 1) % COLORS.length],
     tag: null,
     collapsed: false,
+    paused: false,
   };
   store.groups.push(group);
   setTabGroup(tabId, id);
@@ -490,6 +502,11 @@ export function toggleCollapsed(groupId: number) {
 export function renameGroup(groupId: number, name: string) {
   const group = findGroup(groupId);
   if (group) group.name = name.trim() || group.name;
+}
+
+export function toggleGroupPaused(groupId: number) {
+  const group = store.groups.find((g) => g.id === groupId);
+  if (group) group.paused = !group.paused;
 }
 
 export function setGroupTag(groupId: number, tag: TagId | null) {

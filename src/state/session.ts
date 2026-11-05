@@ -18,6 +18,7 @@ export function snapshot(): string {
       color: t.color,
       tag: t.tag,
       autoTagged: t.autoTagged,
+      paused: t.paused,
       files: t.files.map((f) => ({ ...f })),
       view: t.view,
       panelOpen: t.panelOpen,
