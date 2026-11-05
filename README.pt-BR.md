@@ -36,7 +36,7 @@ subagentes, os servidores MCP e os limites de uso.
 
 **Abas que sabem o que está acontecendo**
 - Abas na lateral com nome, cor e tag de etapa (discovery, spec, design, plan, code, review,
-  request-change, rework, test, approve, close/merge), também nos grupos. Arrastar e soltar, recolher grupos, sessão restaurada ao reabrir.
+  request-change, rework, test, approve, close/merge), também nos grupos. Uma aba ou um grupo inteiro também pode ser pausado, junto com a tag, pra deixar de lado por enquanto. Arrastar e soltar, recolher grupos, sessão restaurada ao reabrir.
 - Terminal inferior por aba (`Ctrl+'`), explorador de arquivos com o status do git (`Ctrl+Shift+G`) e arquivos
   abertos em abas, nos modos *arquivo*, *alterações* (diff com o último commit) e *visualizar* (Markdown/HTML).
 - Links e caminhos de arquivo clicáveis na saída: abrem o arquivo na linha certa.

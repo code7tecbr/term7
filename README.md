@@ -36,7 +36,7 @@ including its subagents, MCP servers and usage limits.
 
 **Tabs that know what is going on**
 - Vertical tabs with name, color and a stage tag (discovery, spec, design, plan, code, review, request-change,
-  rework, test, approve, close/merge), also on tab groups. Drag and drop, collapse groups, session restored on reopen.
+  rework, test, approve, close/merge), also on tab groups. A tab or a whole group can also be paused, on top of its tag, to set it aside for now. Drag and drop, collapse groups, session restored on reopen.
 - A bottom terminal per tab (`Ctrl+'`), a file explorer with git status (`Ctrl+Shift+G`) and files opened in
   tabs, with *file*, *changes* (diff against the last commit) and *preview* (Markdown/HTML) modes.
 - Clickable links and file paths in the output: they open the file at the right line.
