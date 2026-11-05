@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { activeTab, closeTab, goToTab, moveGroupTo, moveTabTo, newTab, restoreLayout, store, syncPrTag, type Group } from "./tabs";
+import { activeTab, closeTab, goToTab, moveGroupTo, moveTabTo, newTab, restoreLayout, store, syncPrTag, toggleGroupPaused, togglePaused, type Group } from "./tabs";
 
 const group = (id: number, extra: Partial<Group> = {}): Group => ({ id, name: `g${id}`, color: null, tag: null, collapsed: false, ...extra }) as Group;
 
@@ -155,5 +155,30 @@ describe("syncPrTag", () => {
     const tab = activeTab.value!;
     syncPrTag(tab, pr("OPEN", "CHANGES_REQUESTED"));
     expect(tab.tag).toBe("rework");
+  });
+});
+
+describe("togglePaused", () => {
+  it("pausa junto com a tag e volta da sessão pausada", () => {
+    const tab = newTab();
+    tab.tag = "review";
+    togglePaused(tab.id);
+    expect([tab.paused, tab.tag]).toEqual([true, "review"]);
+    togglePaused(tab.id);
+    expect(tab.paused).toBe(false);
+
+    store.tabs = [];
+    restoreLayout([{ cwd: "/a", groupId: null, tag: "code", paused: true }, { cwd: "/b", groupId: null }], [], 0);
+    expect(store.tabs.map((t) => t.paused)).toEqual([true, false]);
+  });
+});
+
+describe("toggleGroupPaused", () => {
+  it("pausa o grupo e volta da sessão pausado", () => {
+    restoreLayout([{ cwd: "/a", groupId: 1 }], [group(1, { paused: true }), group(2)], 0);
+    const g = store.groups[0];
+    expect(g.paused).toBe(true);
+    toggleGroupPaused(g.id);
+    expect(g.paused).toBe(false);
   });
 });
