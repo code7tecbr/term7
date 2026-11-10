@@ -1,5 +1,6 @@
 mod agents;
 mod clipboard;
+mod definition;
 mod claude;
 mod files;
 mod gh;
@@ -40,6 +41,8 @@ pub fn run() {
             suggest::claude_suggestions,
             agents::claude_agents,
             agents::claude_agent_steps,
+            definition::find_definitions,
+            definition::resolve_import_path,
             files::read_text_file,
             files::resolve_paths,
             files::pick_files,

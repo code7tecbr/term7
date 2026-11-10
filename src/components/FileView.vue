@@ -11,6 +11,9 @@ import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { gitShowHead, readTextFile, type GitStatus } from "../lib/git";
 import { openUrl } from "../lib/github";
+import { findDefinitions, gotoDefinition, resolveImportPath, type GotoTarget } from "../lib/goto";
+import { openFile } from "../state/editor";
+import ContextMenu, { type MenuItem } from "./ContextMenu.vue";
 import { addComment, commentsFor, lines, removeComment } from "../state/review";
 import type { OpenFile, ReviewComment, Tab } from "../state/tabs";
 
@@ -161,6 +164,45 @@ function onDraftKey(e: KeyboardEvent) {
   }
 }
 
+// ---- Ctrl+clique: ir pra definição ----
+/** Várias definições possíveis: lista pra escolher, onde foi o clique. */
+const gotoMenu = ref<{ x: number; y: number; items: MenuItem[] } | null>(null);
+/** Aviso rápido quando não achou nada. */
+const gotoMiss = ref<string | null>(null);
+let missTimer: ReturnType<typeof setTimeout> | undefined;
+
+function miss(text: string) {
+  gotoMiss.value = text;
+  clearTimeout(missTimer);
+  missTimer = setTimeout(() => (gotoMiss.value = null), 2500);
+}
+
+function jump(root: string, path: string, line: number) {
+  if (root === props.file.root && path === props.file.path) goToLine(line);
+  else openFile({ root, path, origPath: null, line }, props.tab);
+}
+
+async function onGoto(target: GotoTarget, e: MouseEvent) {
+  const { root, path } = props.file;
+  if (target.kind === "import") {
+    const full = `${root}/${path}`;
+    const abs = await resolveImportPath(full.slice(0, full.lastIndexOf("/")), target.spec).catch(() => null);
+    if (!abs) return miss(`Não achei o arquivo de "${target.spec}".`);
+    // Fora da raiz atual (ex.: outro pacote): a pasta do arquivo vira a raiz.
+    if (abs.startsWith(root + "/")) return openFile({ root, path: abs.slice(root.length + 1), origPath: null }, props.tab);
+    const cut = abs.lastIndexOf("/");
+    return openFile({ root: abs.slice(0, cut) || "/", path: abs.slice(cut + 1), origPath: null }, props.tab);
+  }
+  const defs = await findDefinitions(root, path, target.name).catch(() => []);
+  if (!defs.length) return miss(`Não achei a definição de ${target.name}.`);
+  if (defs.length === 1) return jump(root, defs[0].path, defs[0].line);
+  gotoMenu.value = {
+    x: e.clientX,
+    y: e.clientY + 12,
+    items: defs.map((d) => ({ label: `${d.path}:${d.line}  ${d.text}`, action: () => jump(root, d.path, d.line) })),
+  };
+}
+
 const theme = EditorView.theme(
   {
     "&": { height: "100%", backgroundColor: "var(--bg)", color: "var(--fg)", fontSize: "13px" },
@@ -265,6 +307,7 @@ async function load() {
     language,
     trackSelection,
     commentsSlot.of([]),
+    gotoDefinition(onGoto),
   ];
   if (file.mode === "changes") {
     extensions.push(
@@ -319,6 +362,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   document.removeEventListener("selectionchange", onSelectionChange);
+  clearTimeout(missTimer);
   view?.destroy();
 });
 
@@ -331,6 +375,7 @@ onBeforeUnmount(() => {
     <div v-if="note" class="note">{{ note }}</div>
     <div v-show="!preview" class="editor-wrap">
       <div ref="host" class="editor" />
+      <div v-if="gotoMiss" class="goto-miss">{{ gotoMiss }}</div>
       <button v-if="selection && !draft" class="comment-btn" title="Comentar o trecho pra mandar pro Claude desta aba" @mousedown.prevent @click="startComment">
         <svg viewBox="0 0 16 16" width="13" height="13"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" /></svg>
         Comentar {{ selection.removed ? "trecho removido" : selection.from === selection.to ? "linha" : "linhas" }} {{ selection.removed ? "" : lines(selection) }}
@@ -349,6 +394,7 @@ onBeforeUnmount(() => {
     <div v-if="preview?.kind === 'md'" class="markdown" @click="onPreviewClick" v-html="preview.html" />
     <!-- HTML num iframe sem scripts e sem acesso ao app (sandbox vazio). -->
     <iframe v-else-if="preview?.kind === 'html'" class="html" sandbox="" :srcdoc="preview.html" />
+    <ContextMenu v-if="gotoMenu" v-bind="gotoMenu" class="goto-menu" @close="gotoMenu = null" />
   </section>
 </template>
 
@@ -395,6 +441,32 @@ onBeforeUnmount(() => {
 }
 .comment-btn:hover {
   background: color-mix(in srgb, var(--yellow) 14%, var(--bg-elevated));
+}
+.goto-miss {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  color: var(--fg-muted);
+  font-size: 12px;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.35);
+  pointer-events: none;
+}
+.goto-menu {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  max-width: min(720px, 90vw);
+}
+.goto-menu :deep(.item) {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .draft {
   flex-shrink: 0;
