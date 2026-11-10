@@ -8,9 +8,11 @@ BIN="$HOME/.local/bin/term7"
 APPS="$HOME/.local/share/applications"
 ICONS="$HOME/.local/share/icons/hicolor"
 DESKTOP="$APPS/br.tec.code7.term7.desktop"
+EXTENSIONS="$HOME/.local/share/term7/extensions"
 
 if [[ "${1:-}" == "--remove" ]]; then
   rm -f "$BIN" "$DESKTOP"
+  rm -rf "$EXTENSIONS"
   find "$ICONS" -name term7.png -path "*/apps/*" -delete 2>/dev/null || true
   echo "term7 removido."
   exit 0
@@ -24,6 +26,10 @@ trap 'rm -rf "$TMP"' EXIT
 dpkg-deb -x "$DEB" "$TMP"
 
 install -Dm755 "$TMP/usr/bin/term7" "$BIN"
+# Extensões ao lado, como no pacote (o app procura em <prefixo>/share/term7/extensions).
+rm -rf "$EXTENSIONS"
+mkdir -p "$(dirname "$EXTENSIONS")"
+cp -r "$TMP/usr/share/term7/extensions" "$EXTENSIONS"
 
 # Sem passar pelo apt, as dependências do .deb não são instaladas: só avisa.
 for cmd in git gh; do

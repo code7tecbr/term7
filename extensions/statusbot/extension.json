@@ -1,0 +1,31 @@
+{
+  "id": "statusbot",
+  "name": "statusbot",
+  "description": "Mostra na barra de status o que o statusbot está monitorando (Docker local ou servidor).",
+  "link": "https://github.com/wisley7l/statusbot",
+  "kind": "service",
+  "entry": "term7-statusbot",
+  "config": [
+    {
+      "key": "STATUSBOT_URL",
+      "label": "URL do statusbot",
+      "type": "url",
+      "required": true,
+      "placeholder": "http://localhost:8080",
+      "help": "Precisa do endpoint HTTP ligado no statusbot (HTTP_PORT)."
+    },
+    {
+      "key": "STATUSBOT_TOKEN",
+      "label": "Token",
+      "type": "secret",
+      "help": "O HTTP_TOKEN do statusbot. Vazio se ele roda nesta máquina sem token."
+    },
+    {
+      "key": "STATUSBOT_INTERVAL",
+      "label": "Intervalo (segundos)",
+      "type": "number",
+      "default": "60",
+      "help": "De quanto em quanto tempo lê o statusbot (mínimo 15)."
+    }
+  ]
+}

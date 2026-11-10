@@ -53,6 +53,7 @@ src-tauri/src/
   session.rs              session.json em ~/.local/share/br.tec.code7.term7/
   update.rs               atualização: última release via `gh api`, baixa o .deb e instala com `pkexec apt-get`
   api.rs                  API local das extensões: socket $XDG_RUNTIME_DIR/term7/api.sock (desligada por padrão), repassa ao frontend
+  extensions.rs           tela de extensões: lê os extension.json do pacote (share/term7/extensions), instala como serviço systemd ou MCP nas contas do Claude
   definition.rs           ir pra definição (Ctrl+clique): git grep + linhas com cara de definição; imports relativos
 extensions/               extensões fora do app, via API (mcp/: servidor MCP; statusbot/: status na barra), em Python; docs em extensions/README*.md
 ```

@@ -1,0 +1,8 @@
+{
+  "id": "mcp",
+  "name": "MCP do term7",
+  "description": "Deixa o Claude Code listar as abas, ler a tela delas, mandar mensagem pro Claude de outra aba e ver o status dos serviços.",
+  "kind": "mcp",
+  "entry": "term7-mcp",
+  "config": []
+}
