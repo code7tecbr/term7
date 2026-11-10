@@ -75,3 +75,19 @@ describe("auxiliares", () => {
     expect(lastLines(["a", "b", "c", "", "  "], 2)).toEqual(["b", "c"]);
   });
 });
+
+describe("status.*", () => {
+  it("guarda, devolve e apaga o status de uma extensão", async () => {
+    const { deps } = setup([]);
+    await handle(deps, "status.set", { source: "statusbot", items: [{ label: "API", status: "down" }] });
+    const got = (await handle(deps, "status.get", {})) as Record<string, unknown>[];
+    expect(got).toMatchObject([{ id: "statusbot", stale: false, items: [{ label: "API", status: "down" }] }]);
+    await handle(deps, "status.clear", { source: "statusbot" });
+    expect(await handle(deps, "status.get", {})).toEqual([]);
+  });
+
+  it("erro de validação volta pra extensão", async () => {
+    const { deps } = setup([]);
+    await expect(handle(deps, "status.set", { source: "x", items: 1 })).rejects.toThrow(/items/);
+  });
+});

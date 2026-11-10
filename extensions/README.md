@@ -8,6 +8,7 @@ hangs or misbehaves, the terminal keeps working. Extensions can be written in an
 | Extension      | What it does                                                                     |
 |----------------|----------------------------------------------------------------------------------|
 | [`mcp/`](#mcp) | MCP server: Claude Code lists your tabs, reads their screen and messages another tab. |
+| [`statusbot/`](#statusbot) | Shows in the status bar what [statusbot](https://github.com/wisley7l/statusbot) is watching. |
 
 ## Turning the API on
 
@@ -39,6 +40,30 @@ Tools:
 - `send_to_tab`: sends a message to the Claude in another tab, pressing Enter. It never goes to a shell: the tab must
   have Claude open. If Claude is working or waiting for a permission, the message is queued and sent when it is done
   (so Enter never answers a permission by mistake). term7 shows a notice whenever an extension sends a message.
+- `service_status`: the status of services published by extensions (such as statusbot), so Claude can tell whether
+  an error comes from a service that is down.
+
+## statusbot
+
+Adds a button to term7's status bar with the state of [statusbot](https://github.com/wisley7l/statusbot): green,
+yellow or red, with how many services are not normal. Click it for the list, worst first. Works with statusbot in a
+local Docker container or on a server.
+
+Needs statusbot with its HTTP endpoint on (`HTTP_PORT`; on a server, also `HTTP_TOKEN`). Install with its URL; the
+script asks for the token without echoing it:
+
+```sh
+extensions/statusbot/install.sh http://localhost:8080
+```
+
+The script copies `term7-statusbot` to `~/.local/bin`, writes the config to `~/.config/term7/statusbot.env`
+(mode 600) and creates the `term7-statusbot` user service (systemd), which starts with your session and reads
+statusbot every minute. While term7 is closed, it just tries again on the next round.
+
+- Logs: `journalctl --user -u term7-statusbot -f`
+- Run once: `STATUSBOT_URL=http://localhost:8080 ~/.local/bin/term7-statusbot --once`
+- Remove: `systemctl --user disable --now term7-statusbot`, then delete `~/.local/bin/term7-statusbot`,
+  `~/.config/term7/statusbot.env` and `~/.config/systemd/user/term7-statusbot.service`.
 
 ## API protocol
 
@@ -58,12 +83,21 @@ A connection can make several requests. Each request is one JSON line, and so is
 | `tabs.list`  | —                          | list of `{id, title, cwd, branch, process, claude, attention, tag, paused, active, self, queued}` |
 | `tabs.read`  | `tab`, `lines` (50, max 500) | `{id, lines: [...]}`                                                   |
 | `tabs.send`  | `tab`, `text`              | `{"status": "sent"}` or `{"status": "queued", "position": n}`            |
+| `status.set` | `source`, `title`, `items`, `checkedAt`, `error`, `link`, `ttlSeconds` | `{"ok": true}`       |
+| `status.clear` | `source`                 | `{"ok": true}`                                                           |
+| `status.get` | —                          | what was published, with `stale`                                         |
 
 `claude` is `working`, `waiting`, `done`, `idle` (open and idle) or `null` (no Claude in the tab). `api` changes when
 a method changes in an incompatible way. Error messages are in Portuguese.
+
+With `status.set`, each extension publishes under its own `source` (e.g. `statusbot`), and each one becomes a button
+in the status bar. `items` is a list of `{label, status, since?, detail?, link?}`, where `status` is `up`, `degraded`,
+`maintenance`, `down` or `unknown`. `error` shows a warning (e.g. the service is unreachable). Without a new
+`status.set` within `ttlSeconds` (default 300), the button turns grey: the extension stopped. Only http(s) links open.
 
 ## Tests
 
 ```sh
 python3 -m unittest discover -s extensions/mcp
+python3 -m unittest discover -s extensions/statusbot
 ```

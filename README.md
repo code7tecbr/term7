@@ -79,8 +79,9 @@ When a new release is out, **Update to vX** shows up next to the version in the 
 ### Extensions
 
 Optional add-ons live in [`extensions/`](extensions/README.md) and install separately. They talk to term7 through a
-local API that is off by default (**Settings > Extensions**). The first one is an MCP server that lets Claude Code
-list your tabs, read their screen and message the Claude in another tab.
+local API that is off by default (**Settings > Extensions**). Available: an MCP server that lets Claude Code list
+your tabs, read their screen and message the Claude in another tab, and a status bar indicator for
+[statusbot](https://github.com/wisley7l/statusbot).
 
 ## Building from source
 

@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { watch } from "vue";
+import { extStatus, parseStatusSet } from "../state/extStatus";
 import type { Tab } from "../state/tabs";
 import { gitStatus } from "./git";
 import type { PtySession } from "./pty";
@@ -114,6 +115,24 @@ export async function handle(deps: ApiDeps, method: string, params: Record<strin
       }
       return { status: "queued", position: queue.length + 1 };
     }
+    case "status.set": {
+      let source;
+      try {
+        source = parseStatusSet(params, Date.now());
+      } catch (err) {
+        throw new ApiError((err as Error).message);
+      }
+      extStatus.sources[source.id] = source;
+      return { ok: true };
+    }
+    case "status.clear":
+      delete extStatus.sources[String(params.source)];
+      return { ok: true };
+    case "status.get":
+      return Object.values(extStatus.sources).map(({ receivedAt, ttlMs, ...s }) => ({
+        ...s,
+        stale: Date.now() - receivedAt > ttlMs,
+      }));
     default:
       throw new ApiError(`método desconhecido: ${method}`);
   }

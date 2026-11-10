@@ -38,6 +38,7 @@ src/
   lib/settings.ts         configurações, ditado (voice_*) e seletor de arquivos; shellQuote dos caminhos colados
   lib/update.ts           confere/instala a versão nova (botão ao lado da versão, na barra)
   lib/api.ts, screens.ts  API das extensões: atende os pedidos do api.rs (abas, tela, mandar pro Claude com fila)
+  state/extStatus.ts      status publicado por extensões (status.set); ExtStatus.vue desenha na barra de status
 src-tauri/src/
   pty.rs                  sessões de shell (spawn/write/resize/kill/info via /proc)
   git.rs                  status, ls-files, branches, checkout, fetch, info do repo (usa o binário `git`)
@@ -53,7 +54,7 @@ src-tauri/src/
   update.rs               atualização: última release via `gh api`, baixa o .deb e instala com `pkexec apt-get`
   api.rs                  API local das extensões: socket $XDG_RUNTIME_DIR/term7/api.sock (desligada por padrão), repassa ao frontend
   definition.rs           ir pra definição (Ctrl+clique): git grep + linhas com cara de definição; imports relativos
-extensions/               extensões fora do app, via API (mcp/: servidor MCP em Python); docs em extensions/README*.md
+extensions/               extensões fora do app, via API (mcp/: servidor MCP; statusbot/: status na barra), em Python; docs em extensions/README*.md
 ```
 
 ## Convenções

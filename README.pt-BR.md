@@ -81,8 +81,9 @@ Quando sai uma release nova, aparece **Atualizar pra vX** ao lado da versão, na
 ### Extensões
 
 Complementos opcionais ficam em [`extensions/`](extensions/README.pt-BR.md) e são instalados à parte. Eles falam com
-o term7 por uma API local, desligada por padrão (**Configurações > Extensões**). A primeira é um servidor MCP que
-deixa o Claude Code listar suas abas, ler a tela delas e mandar mensagem pro Claude de outra aba.
+o term7 por uma API local, desligada por padrão (**Configurações > Extensões**). Disponíveis: um servidor MCP que
+deixa o Claude Code listar suas abas, ler a tela delas e mandar mensagem pro Claude de outra aba, e um indicador na
+barra de status pro [statusbot](https://github.com/wisley7l/statusbot).
 
 ## Compilando
 
