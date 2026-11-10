@@ -8,6 +8,7 @@ import { attachLinks } from "../lib/links";
 import { attachPathLinks, type PathTarget } from "../lib/paths";
 import { matchShortcut } from "../lib/shortcuts";
 import { attachSuggestions } from "../lib/suggestions";
+import { registerScreen } from "../lib/screens";
 import { isTextKey, routeTextInput } from "../lib/textInput";
 import { term7Dark } from "../lib/theme";
 import { anon, anonFontReady, ANON_FONT } from "../state/anon";
@@ -30,6 +31,7 @@ let session: PtySession | undefined;
 let observer: ResizeObserver | undefined;
 const fit = new FitAddon();
 let stopAnon: (() => void) | undefined;
+let unregisterScreen: (() => void) | undefined;
 
 function loadWebgl(t: Terminal) {
   try {
@@ -199,6 +201,7 @@ onMounted(async () => {
     onData: (bytes) => t.write(bytes),
     onExit: (code) => emit("exit", code),
   });
+  unregisterScreen = registerScreen(session.id, t);
   emit("spawned", session);
 
   t.onData((input) => session?.write(input));
@@ -212,6 +215,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   stopAnon?.();
+  unregisterScreen?.();
   observer?.disconnect();
   session?.kill();
   term?.dispose();
