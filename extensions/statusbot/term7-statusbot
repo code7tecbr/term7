@@ -1,0 +1,143 @@
+#!/usr/bin/env python3
+"""Extensão statusbot do term7: mostra na barra do term7 o status do statusbot.
+
+Lê o GET /api/status do statusbot (https://github.com/wisley7l/statusbot), em
+Docker local ou num servidor, e publica pela API local do term7 (status.set).
+Roda em loop (como serviço do usuário, ver install.sh) ou uma vez com --once.
+Só usa a biblioteca padrão do Python.
+
+Configuração por variáveis de ambiente:
+  STATUSBOT_URL       base ou URL completa (ex.: http://localhost:8080)
+  STATUSBOT_TOKEN     opcional: o HTTP_TOKEN do statusbot
+  STATUSBOT_INTERVAL  segundos entre leituras (padrão 60)
+"""
+
+import json
+import os
+import socket
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.request
+from datetime import datetime, timezone
+
+SOURCE = "statusbot"
+TITLE = "statusbot"
+
+
+def socket_path():
+    base = os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir()
+    return os.path.join(base, "term7", "api.sock")
+
+
+class Term7Offline(Exception):
+    pass
+
+
+def call_api(method, params, path=None):
+    """Um pedido pra API do term7. Term7Offline se ele estiver fechado ou com a API desligada."""
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+            s.settimeout(15)
+            s.connect(path or socket_path())
+            s.sendall((json.dumps({"method": method, "params": params}) + "\n").encode())
+            data = b""
+            while not data.endswith(b"\n"):
+                chunk = s.recv(65536)
+                if not chunk:
+                    break
+                data += chunk
+    except OSError as e:
+        raise Term7Offline(str(e))
+    reply = json.loads(data or b"{}")
+    if "error" in reply:
+        raise RuntimeError(reply["error"])
+    return reply.get("result")
+
+
+def status_url(url):
+    url = url.rstrip("/")
+    return url if url.endswith("/api/status") else url + "/api/status"
+
+
+def fetch(url, token=None, timeout=10):
+    """(código HTTP, corpo em JSON ou None). Código 0 = não alcançou o statusbot."""
+    req = urllib.request.Request(status_url(url), headers={"Accept": "application/json"})
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as res:
+            return res.status, json.loads(res.read())
+    except urllib.error.HTTPError as e:
+        try:
+            body = json.loads(e.read())
+        except ValueError:
+            body = None
+        return e.code, body
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        return 0, {"reason": str(getattr(e, "reason", e))}
+
+
+def parse_iso(s):
+    return datetime.fromisoformat(s.replace("Z", "+00:00"))
+
+
+def to_status(url, code, body, interval, now=None):
+    """Params do status.set a partir da resposta do statusbot."""
+    now = now or datetime.now(timezone.utc)
+    params = {"source": SOURCE, "title": TITLE, "items": [], "ttlSeconds": interval * 3}
+    if code == 200 and isinstance(body, dict):
+        params["items"] = [
+            {k: it[k] for k in ("label", "status", "since", "detail", "link") if k in it}
+            for it in body.get("items", [])
+        ]
+        params["checkedAt"] = body.get("checkedAt")
+        # O statusbot travou ou parou de ler: a última leitura ficou pra trás.
+        every = body.get("intervalSeconds") or 300
+        if body.get("checkedAt") and (now - parse_iso(body["checkedAt"])).total_seconds() > every * 3:
+            params["error"] = "A última leitura do statusbot está atrasada: ele pode ter travado."
+    elif code == 503:
+        params["error"] = "O statusbot ainda não fez a primeira leitura."
+    elif code == 401:
+        params["error"] = "O statusbot recusou o token (STATUSBOT_TOKEN)."
+    elif code == 0:
+        reason = (body or {}).get("reason", "")
+        params["error"] = f"Não consegui falar com o statusbot em {status_url(url)}" + (f": {reason}" if reason else ".")
+    else:
+        params["error"] = f"O statusbot respondeu HTTP {code}."
+    return params
+
+
+def run_once(url, token, interval, api=call_api):
+    code, body = fetch(url, token)
+    api("status.set", to_status(url, code, body, interval))
+
+
+def main():
+    url = os.environ.get("STATUSBOT_URL", "").strip()
+    if not url:
+        print("Defina STATUSBOT_URL (ex.: http://localhost:8080).", file=sys.stderr)
+        return 2
+    token = os.environ.get("STATUSBOT_TOKEN", "").strip() or None
+    interval = max(int(os.environ.get("STATUSBOT_INTERVAL", "60") or 60), 15)
+    once = "--once" in sys.argv[1:]
+    while True:
+        try:
+            run_once(url, token, interval)
+        except Term7Offline:
+            # term7 fechado ou API desligada: tenta de novo na próxima volta.
+            if once:
+                print("term7 fechado ou com a API desligada (Configurações > Extensões).", file=sys.stderr)
+                return 1
+        except Exception as e:  # noqa: BLE001 — o serviço não pode morrer por um erro pontual
+            print(f"term7-statusbot: {e}", file=sys.stderr)
+            if once:
+                return 1
+        if once:
+            return 0
+        time.sleep(interval)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

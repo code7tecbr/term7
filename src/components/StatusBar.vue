@@ -5,6 +5,7 @@ import { repoName, type GitStatus } from "../lib/git";
 import { openUrl, overall, type Check, type CheckState, type GithubStatus, type RepoInfo } from "../lib/github";
 import { checkUpdate, installUpdate, restartApp, type UpdateInfo } from "../lib/update";
 import { prettyPath } from "../state/tabs";
+import ExtStatus from "./ExtStatus.vue";
 
 const props = defineProps<{
   cwd: string | null;
@@ -229,6 +230,7 @@ const totals = computed(() => {
         </button>
       </template>
 
+      <ExtStatus />
       <button
         v-if="update?.newer && update.installed"
         class="btn update"

@@ -35,7 +35,9 @@ class Protocolo(unittest.TestCase):
 
     def test_lista_as_ferramentas(self):
         r = mcp.respond({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
-        self.assertEqual([t["name"] for t in r["result"]["tools"]], ["list_tabs", "read_tab", "send_to_tab"])
+        self.assertEqual(
+            [t["name"] for t in r["result"]["tools"]], ["list_tabs", "read_tab", "send_to_tab", "service_status"]
+        )
 
     def test_erro_da_api_vira_resultado_com_isError(self):
         def api(method, params=None):
@@ -57,6 +59,17 @@ class Ferramentas(unittest.TestCase):
         self.assertIn("ESPERANDO VOCÊ", text)
         self.assertIn("[2] gopay (esta aba, pausada)", text)
         self.assertIn("programa: zsh (sem Claude)", text)
+
+    def test_status_dos_servicos(self):
+        sources = [{"id": "statusbot", "title": "statusbot", "checkedAt": "2026-11-10T20:05:17Z", "error": None,
+                    "stale": False, "items": [
+                        {"label": "My API", "status": "down", "since": "2026-11-10T19:53:02Z", "detail": "HTTP 502"},
+                        {"label": "Cloudflare", "status": "up"}]}]
+        text = mcp.run_tool("service_status", {}, lambda m, p=None: sources)
+        self.assertIn("statusbot: 1 de 2 fora do normal", text)
+        self.assertIn("- My API: FORA DO AR (desde 2026-11-10T19:53:02Z · HTTP 502)", text)
+        self.assertNotIn("Cloudflare", text)
+        self.assertIn("Nenhuma extensão", mcp.run_tool("service_status", {}, lambda m, p=None: []))
 
     def test_envio_na_fila(self):
         text = mcp.run_tool("send_to_tab", {"tab": 1, "message": "oi"},

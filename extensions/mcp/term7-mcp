@@ -137,7 +137,50 @@ TOOLS = [
             "required": ["tab", "message"],
         },
     },
+    {
+        "name": "service_status",
+        "description": (
+            "Status dos serviços externos publicados por extensões do term7 (ex.: statusbot: "
+            "Cloudflare, AWS, APIs próprias). Use ao investigar um erro, pra saber se o problema "
+            "é um serviço fora do ar e não o código."
+        ),
+        "inputSchema": {"type": "object", "properties": {}},
+    },
 ]
+
+
+STATUS_LEVELS = {
+    "down": "FORA DO AR",
+    "degraded": "degradado",
+    "unknown": "sem leitura",
+    "maintenance": "em manutenção",
+    "up": "normal",
+}
+
+
+def format_status(sources):
+    if not sources:
+        return "Nenhuma extensão publicou status (ex.: instale extensions/statusbot)."
+    out = []
+    for s in sources:
+        items = s.get("items", [])
+        bad = [i for i in items if i.get("status") != "up"]
+        head = f"{s.get('title') or s.get('id')}: " + (
+            f"{len(bad)} de {len(items)} fora do normal" if bad else f"tudo normal ({len(items)})"
+        )
+        if s.get("checkedAt"):
+            head += f" · lido em {s['checkedAt']}"
+        lines = [head]
+        if s.get("error"):
+            lines.append(f"  aviso: {s['error']}")
+        if s.get("stale"):
+            lines.append("  aviso: a extensão parou de mandar atualizações; pode estar velho")
+        for i in bad:
+            extra = " · ".join(x for x in (f"desde {i['since']}" if i.get("since") else None, i.get("detail"), i.get("link")) if x)
+            state = STATUS_LEVELS.get(i.get("status"), i.get("status"))
+            lines.append(f"  - {i['label']}: {state}" + (f" ({extra})" if extra else ""))
+        out.append("\n".join(lines))
+    return "\n\n".join(out)
 
 
 def run_tool(name, args, api=call_api):
@@ -151,6 +194,8 @@ def run_tool(name, args, api=call_api):
         if res.get("status") == "sent":
             return "Mensagem enviada."
         return f"O Claude da aba está ocupado: mensagem na fila (posição {res.get('position')}), sai quando ele terminar."
+    if name == "service_status":
+        return format_status(api("status.get"))
     raise ApiError(f"Ferramenta desconhecida: {name}")
 
 
