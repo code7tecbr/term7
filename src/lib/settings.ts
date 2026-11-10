@@ -13,9 +13,13 @@ export interface VoiceSettings {
 export interface SettingsView {
   voice: VoiceSettings;
   has_api_key: boolean;
+  /** API local das extensões (extensions/). */
+  api_enabled: boolean;
+  api_error: string | null;
 }
 
 export const loadSettings = () => invoke<SettingsView>("settings_load");
+export const setApiEnabled = (enabled: boolean) => invoke<SettingsView>("settings_set_api", { enabled });
 /** apiKey: undefined mantém a salva, "" apaga. */
 export const saveSettings = (voice: VoiceSettings, apiKey?: string) =>
   invoke<SettingsView>("settings_save", { voice, apiKey: apiKey ?? null });

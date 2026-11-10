@@ -1,4 +1,5 @@
 mod agents;
+mod api;
 mod clipboard;
 mod definition;
 mod claude;
@@ -17,6 +18,14 @@ pub fn run() {
     tauri::Builder::default()
         .manage(pty::PtyState::default())
         .manage(voice::VoiceState::default())
+        .manage(api::ApiState::default())
+        .setup(|app| {
+            if settings::load(app.handle()).api_enabled {
+                // Sem a API o app funciona igual; o erro aparece ao abrir as configurações.
+                let _ = api::start(app.handle());
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             pty::pty_spawn,
             pty::pty_write,
@@ -48,6 +57,8 @@ pub fn run() {
             files::pick_files,
             settings::settings_load,
             settings::settings_save,
+            settings::settings_set_api,
+            api::api_respond,
             voice::voice_start,
             voice::voice_stop,
             voice::voice_cancel,

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import type { ClaudeUsage } from "../lib/pty";
-import { loadSettings, saveSettings, VOICE_PRESETS, type VoiceSettings } from "../lib/settings";
+import { loadSettings, saveSettings, setApiEnabled, VOICE_PRESETS, type VoiceSettings } from "../lib/settings";
 
 /** Configurações do term7: uso do Claude na barra e ditado por voz. */
 defineProps<{ usage: ClaudeUsage | null }>();
@@ -13,6 +13,16 @@ const hasKey = ref(false);
 const newKey = ref("");
 const status = ref<{ ok: boolean; text: string } | null>(null);
 const saving = ref(false);
+const api = ref<{ enabled: boolean; error: string | null }>({ enabled: false, error: null });
+
+async function toggleApi() {
+  try {
+    const view = await setApiEnabled(!api.value.enabled);
+    api.value = { enabled: view.api_enabled, error: view.api_error };
+  } catch (err) {
+    api.value = { ...api.value, error: `Não deu pra salvar: ${err}` };
+  }
+}
 
 const preset = computed(() => VOICE_PRESETS.find((p) => p.url === voice.api_url.replace(/\/$/, ""))?.id ?? "custom");
 
@@ -50,6 +60,7 @@ onMounted(async () => {
   if (view) {
     Object.assign(voice, view.voice);
     hasKey.value = view.has_api_key;
+    api.value = { enabled: view.api_enabled, error: view.api_error };
   }
 });
 onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
@@ -148,6 +159,21 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
           </label>
         </section>
 
+        <section>
+          <h2>Extensões</h2>
+          <div class="usage-row">
+            <span class="hint">
+              <b>API local</b>: deixa as extensões (como o MCP do term7, em <code>extensions/</code>) listar as abas, ler a tela
+              e mandar mensagem pro Claude de uma aba. Só o seu usuário acessa (socket em
+              <code>$XDG_RUNTIME_DIR/term7/api.sock</code>).
+            </span>
+            <button type="button" :class="api.enabled ? 'secondary' : 'primary'" @click="toggleApi">
+              {{ api.enabled ? "Desligar" : "Ligar" }}
+            </button>
+          </div>
+          <small v-if="api.error" class="api-error">{{ api.error }}</small>
+        </section>
+
         <footer>
           <span v-if="status" class="status" :class="{ error: !status.ok }">{{ status.text }}</span>
           <button type="submit" class="primary" :disabled="saving">Salvar</button>
@@ -158,6 +184,9 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
 </template>
 
 <style scoped>
+.api-error {
+  color: var(--red);
+}
 .backdrop {
   position: fixed;
   inset: 0;

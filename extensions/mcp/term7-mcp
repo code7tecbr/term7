@@ -1,0 +1,202 @@
+#!/usr/bin/env python3
+"""MCP do term7: deixa o Claude Code ver e falar com as outras abas do term7.
+
+Servidor MCP por stdio (JSON-RPC, uma mensagem por linha) que traduz as
+ferramentas pra API local do term7 (socket em $XDG_RUNTIME_DIR/term7/api.sock).
+Só usa a biblioteca padrão do Python: nada pra instalar além dele.
+"""
+
+import json
+import os
+import socket
+import sys
+import tempfile
+
+VERSION = "0.1.0"
+# Versões do protocolo MCP que este servidor entende (a mais nova primeiro).
+PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"]
+
+
+def socket_path():
+    base = os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir()
+    return os.path.join(base, "term7", "api.sock")
+
+
+class ApiError(Exception):
+    pass
+
+
+def call_api(method, params=None, path=None):
+    """Um pedido pra API do term7. Levanta ApiError com a mensagem pro usuário."""
+    params = dict(params or {})
+    # A aba de onde o Claude chama: o term7 marca como "self" e não deixa mandar pra ela.
+    pane = os.environ.get("TERM7_PANE")
+    if pane:
+        params["pane"] = pane
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+            s.settimeout(15)
+            s.connect(path or socket_path())
+            s.sendall((json.dumps({"method": method, "params": params}) + "\n").encode())
+            data = b""
+            while not data.endswith(b"\n"):
+                chunk = s.recv(65536)
+                if not chunk:
+                    break
+                data += chunk
+    except (FileNotFoundError, ConnectionRefusedError):
+        raise ApiError(
+            "O term7 não está aberto ou a API está desligada "
+            "(ligue em Configurações > Extensões)."
+        )
+    except OSError as e:
+        raise ApiError(f"Falha ao falar com o term7: {e}")
+    try:
+        reply = json.loads(data)
+    except ValueError:
+        raise ApiError("Resposta inválida do term7.")
+    if "error" in reply:
+        raise ApiError(reply["error"])
+    return reply.get("result")
+
+
+CLAUDE_STATES = {
+    "working": "trabalhando",
+    "waiting": "ESPERANDO VOCÊ (permissão ou pergunta)",
+    "done": "terminou",
+    "idle": "aberto, parado",
+}
+
+
+def format_tabs(tabs):
+    if not tabs:
+        return "Nenhuma aba aberta."
+    out = []
+    for t in tabs:
+        marks = []
+        if t.get("self"):
+            marks.append("esta aba")
+        if t.get("active"):
+            marks.append("em foco")
+        if t.get("paused"):
+            marks.append("pausada")
+        if t.get("attention"):
+            marks.append("não vista")
+        head = f"[{t['id']}] {t['title']}" + (f" ({', '.join(marks)})" if marks else "")
+        claude = CLAUDE_STATES.get(t.get("claude"), None)
+        details = [
+            f"Claude: {claude}" if claude else f"programa: {t.get('process') or '?'} (sem Claude)",
+            f"branch: {t['branch']}" if t.get("branch") else None,
+            f"tag: {t['tag']}" if t.get("tag") else None,
+            f"pasta: {t['cwd']}" if t.get("cwd") else None,
+            f"{t['queued']} mensagem(ns) na fila" if t.get("queued") else None,
+        ]
+        out.append(head + "\n  " + " · ".join(d for d in details if d))
+    return "\n".join(out)
+
+
+TOOLS = [
+    {
+        "name": "list_tabs",
+        "description": (
+            "Lista as abas abertas no term7: título, pasta, branch do git, tag e o estado do "
+            "Claude Code em cada uma (trabalhando, esperando você, terminou). Use pra saber se "
+            "há algo pendente ou pra achar a aba de uma branch/PR."
+        ),
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "read_tab",
+        "description": (
+            "Lê as últimas linhas da tela do terminal de uma aba do term7 (o que o Claude ou o "
+            "programa dela está mostrando agora). Use o id de list_tabs."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tab": {"type": "integer", "description": "Id da aba (de list_tabs)."},
+                "lines": {"type": "integer", "description": "Quantas linhas (padrão 50, máx. 500)."},
+            },
+            "required": ["tab"],
+        },
+    },
+    {
+        "name": "send_to_tab",
+        "description": (
+            "Manda uma mensagem pro Claude Code de outra aba do term7, como se o usuário tivesse "
+            "digitado e apertado Enter. Só funciona em aba com o Claude aberto. Se ele estiver "
+            "trabalhando ou esperando permissão, a mensagem fica na fila e é enviada quando ele "
+            "terminar. Use o id de list_tabs."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tab": {"type": "integer", "description": "Id da aba (de list_tabs)."},
+                "message": {"type": "string", "description": "Texto pro Claude daquela aba."},
+            },
+            "required": ["tab", "message"],
+        },
+    },
+]
+
+
+def run_tool(name, args, api=call_api):
+    if name == "list_tabs":
+        return format_tabs(api("tabs.list"))
+    if name == "read_tab":
+        res = api("tabs.read", {"tab": args.get("tab"), "lines": args.get("lines", 50)})
+        return "\n".join(res["lines"]) or "(tela vazia)"
+    if name == "send_to_tab":
+        res = api("tabs.send", {"tab": args.get("tab"), "text": args.get("message", "")})
+        if res.get("status") == "sent":
+            return "Mensagem enviada."
+        return f"O Claude da aba está ocupado: mensagem na fila (posição {res.get('position')}), sai quando ele terminar."
+    raise ApiError(f"Ferramenta desconhecida: {name}")
+
+
+def respond(msg, api=call_api):
+    """Resposta a uma mensagem JSON-RPC, ou None (notificações não têm resposta)."""
+    method, mid = msg.get("method"), msg.get("id")
+    if mid is None:
+        return None
+    if method == "initialize":
+        asked = (msg.get("params") or {}).get("protocolVersion")
+        result = {
+            "protocolVersion": asked if asked in PROTOCOLS else PROTOCOLS[0],
+            "capabilities": {"tools": {}},
+            "serverInfo": {"name": "term7", "version": VERSION},
+        }
+    elif method == "ping":
+        result = {}
+    elif method == "tools/list":
+        result = {"tools": TOOLS}
+    elif method == "tools/call":
+        params = msg.get("params") or {}
+        try:
+            text, is_error = run_tool(params.get("name"), params.get("arguments") or {}, api), False
+        except ApiError as e:
+            text, is_error = str(e), True
+        result = {"content": [{"type": "text", "text": text}], "isError": is_error}
+    else:
+        return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": f"Método desconhecido: {method}"}}
+    return {"jsonrpc": "2.0", "id": mid, "result": result}
+
+
+def main():
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            msg = json.loads(line)
+        except ValueError:
+            out = {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "JSON inválido"}}
+        else:
+            out = respond(msg) if isinstance(msg, dict) else None
+        if out is not None:
+            sys.stdout.write(json.dumps(out, ensure_ascii=False) + "\n")
+            sys.stdout.flush()
+
+
+if __name__ == "__main__":
+    main()
