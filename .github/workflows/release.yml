@@ -97,6 +97,10 @@ jobs:
       - run: npm ci
       # Testes antes do bundle: o cargo test precisa do dist/ (o Tauri embute o frontend).
       - run: npm test
+      - name: Testes das extensões
+        run: |
+          python3 -m unittest discover -s extensions/mcp
+          python3 -m unittest discover -s extensions/statusbot
       - run: npm run build
       - run: cargo test --locked
         working-directory: src-tauri

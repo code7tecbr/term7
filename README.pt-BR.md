@@ -78,6 +78,13 @@ o Pop!_OS 24.04.
 
 Quando sai uma release nova, aparece **Atualizar pra vX** ao lado da versão, na barra de status.
 
+### Extensões
+
+Complementos opcionais ficam em [`extensions/`](extensions/README.pt-BR.md) e são instalados à parte. Eles falam com
+o term7 por uma API local, desligada por padrão (**Configurações > Extensões**). Disponíveis: um servidor MCP que
+deixa o Claude Code listar suas abas, ler a tela delas e mandar mensagem pro Claude de outra aba, e um indicador na
+barra de status pro [statusbot](https://github.com/wisley7l/statusbot).
+
 ## Compilando
 
 Você precisa do Node 24+ e do Docker (recomendado: não precisa de Rust na máquina) ou do Rust com as

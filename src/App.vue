@@ -42,6 +42,7 @@ import {
 import { matchShortcut, type Action } from "./lib/shortcuts";
 import { useGitStatus } from "./lib/useGitStatus";
 import { useGithub } from "./lib/useGithub";
+import { startApi } from "./lib/api";
 import { restoreSession, saveSession, snapshot } from "./state/session";
 import {
   activeTab,
@@ -414,6 +415,15 @@ function flash(msg: string) {
   claudeHooksNote.value = msg;
   setTimeout(() => claudeHooksNote.value === msg && (claudeHooksNote.value = null), 8000);
 }
+
+// API das extensões (extensions/): só recebe pedidos se estiver ligada nas configurações.
+startApi({
+  tabs: () => store.tabs,
+  activeId: () => store.activeId,
+  session: (tab) => sessions.get(tab.id),
+  title: (tab) => tabTitle(tab, home.value),
+  notify: flash,
+});
 
 /** Terminal com o foco na aba ativa (o principal ou o de baixo). */
 function focusedSession(pane = activeTab.value?.focusedPane): PtySession | undefined {

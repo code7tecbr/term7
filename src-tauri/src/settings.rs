@@ -49,6 +49,8 @@ impl Default for VoiceSettings {
 #[serde(default)]
 pub struct Settings {
     pub voice: VoiceSettings,
+    /// API local pras extensões (socket em $XDG_RUNTIME_DIR/term7/api.sock).
+    pub api_enabled: bool,
 }
 
 /// O que o frontend vê: tudo, menos a chave.
@@ -56,6 +58,9 @@ pub struct Settings {
 pub struct SettingsView {
     voice: VoiceSettings,
     has_api_key: bool,
+    api_enabled: bool,
+    /// Erro ao ligar a API (ex.: outra janela já está com ela).
+    api_error: Option<String>,
 }
 
 fn path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -81,15 +86,27 @@ fn view(s: Settings) -> SettingsView {
     let has_api_key = !s.voice.api_key.is_empty();
     let mut voice = s.voice;
     voice.api_key.clear();
-    SettingsView { voice, has_api_key }
+    SettingsView { voice, has_api_key, api_enabled: s.api_enabled, api_error: None }
 }
 
 #[tauri::command]
 pub fn settings_load(app: AppHandle) -> SettingsView {
-    view(load(&app))
+    let v = view(load(&app));
+    let api_error = (v.api_enabled && !crate::api::is_running(&app))
+        .then(|| "A API não ligou: outra janela do term7 está com ela?".to_string());
+    SettingsView { api_error, ..v }
 }
 
 /// `api_key`: None mantém a salva, "" apaga, outro valor troca.
+/// Liga ou desliga a API das extensões e guarda a escolha.
+#[tauri::command]
+pub fn settings_set_api(app: AppHandle, enabled: bool) -> Result<SettingsView, String> {
+    let settings = Settings { api_enabled: enabled, ..load(&app) };
+    save(&app, &settings)?;
+    let error = if enabled { crate::api::start(&app).err() } else { crate::api::stop(&app); None };
+    Ok(SettingsView { api_error: error, ..view(settings) })
+}
+
 #[tauri::command]
 pub fn settings_save(app: AppHandle, mut voice: VoiceSettings, api_key: Option<String>) -> Result<SettingsView, String> {
     voice.api_key = match api_key {

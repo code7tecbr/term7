@@ -76,6 +76,13 @@ term7 ships as a `.deb` built on Ubuntu 24.04. It installs on Ubuntu 24.04 or ne
 
 When a new release is out, **Update to vX** shows up next to the version in the status bar.
 
+### Extensions
+
+Optional add-ons live in [`extensions/`](extensions/README.md) and install separately. They talk to term7 through a
+local API that is off by default (**Settings > Extensions**). Available: an MCP server that lets Claude Code list
+your tabs, read their screen and message the Claude in another tab, and a status bar indicator for
+[statusbot](https://github.com/wisley7l/statusbot).
+
 ## Building from source
 
 You need Node 24+ and either Docker (recommended: no Rust on your machine) or Rust with the Tauri libraries.
