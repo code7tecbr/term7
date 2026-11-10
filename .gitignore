@@ -5,3 +5,6 @@ src-tauri/gen/schemas
 *.log
 dist-deb
 src-tauri/THIRD_PARTY_LICENSES.md
+
+# Cache do Python (testes das extensões)
+__pycache__/
