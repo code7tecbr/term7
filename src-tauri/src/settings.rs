@@ -98,6 +98,15 @@ pub fn settings_load(app: AppHandle) -> SettingsView {
 }
 
 /// `api_key`: None mantém a salva, "" apaga, outro valor troca.
+/// Liga a API (ao instalar uma extensão: sem ela nenhuma funciona).
+pub fn enable_api(app: &AppHandle) -> Result<(), String> {
+    let settings = load(app);
+    if !settings.api_enabled {
+        save(app, &Settings { api_enabled: true, ..settings })?;
+    }
+    crate::api::start(app)
+}
+
 /// Liga ou desliga a API das extensões e guarda a escolha.
 #[tauri::command]
 pub fn settings_set_api(app: AppHandle, enabled: bool) -> Result<SettingsView, String> {

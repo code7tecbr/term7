@@ -10,6 +10,14 @@ hangs or misbehaves, the terminal keeps working. Extensions can be written in an
 | [`mcp/`](#mcp) | MCP server: Claude Code lists your tabs, reads their screen and messages another tab. |
 | [`statusbot/`](#statusbot) | Shows in the status bar what [statusbot](https://github.com/wisley7l/statusbot) is watching. |
 
+## Installing
+
+Extensions ship with term7. Open **Settings > Extensions**, click an extension, fill in the fields and click
+**Install**. Installing turns the API on. To change the configuration, edit the fields and click **Save**; to take it
+out, **Remove**. Tokens are kept in `~/.config/term7/<id>.env` (mode 600) and never come back to the screen.
+
+Each folder's `install.sh` does the same from a terminal, using the repository.
+
 ## Turning the API on
 
 The API is **off** by default. Turn it on in **Settings > Extensions**. It is a Unix socket at
@@ -20,7 +28,8 @@ The API is **off** by default. Turn it on in **Settings > Extensions**. It is a 
 Lets Claude Code in any tab ask things like "is any tab waiting for me?" or "tell the tab on branch `feat/x` that
 the PR got a review".
 
-Needs `python3` (already on Ubuntu) and Claude Code. Install with:
+Needs `python3` (already on Ubuntu) and Claude Code. On the screen, tick the Claude accounts to install it in: term7
+finds the default one (`~/.claude.json`) and every `~/.claude-*` with a `.claude.json` inside. From a terminal:
 
 ```sh
 extensions/mcp/install.sh
@@ -49,8 +58,8 @@ Adds a button to term7's status bar with the state of [statusbot](https://github
 yellow or red, with how many services are not normal. Click it for the list, worst first. Works with statusbot in a
 local Docker container or on a server.
 
-Needs statusbot with its HTTP endpoint on (`HTTP_PORT`; on a server, also `HTTP_TOKEN`). Install with its URL; the
-script asks for the token without echoing it:
+Needs statusbot with its HTTP endpoint on (`HTTP_PORT`; on a server, also `HTTP_TOKEN`). On the screen, fill in the
+URL and token. From a terminal, the script asks for the token without echoing it:
 
 ```sh
 extensions/statusbot/install.sh http://localhost:8080
@@ -94,6 +103,31 @@ With `status.set`, each extension publishes under its own `source` (e.g. `status
 in the status bar. `items` is a list of `{label, status, since?, detail?, link?}`, where `status` is `up`, `degraded`,
 `maintenance`, `down` or `unknown`. `error` shows a warning (e.g. the service is unreachable). Without a new
 `status.set` within `ttlSeconds` (default 300), the button turns grey: the extension stopped. Only http(s) links open.
+
+## Writing an extension
+
+Each folder has an `extension.json`, which the screen uses to build the form and install:
+
+```json
+{
+  "id": "statusbot",
+  "name": "statusbot",
+  "description": "What it does, in one sentence.",
+  "link": "https://...",
+  "kind": "service",
+  "entry": "term7-statusbot",
+  "config": [
+    { "key": "STATUSBOT_URL", "label": "URL", "type": "url", "required": true, "placeholder": "http://localhost:8080" },
+    { "key": "STATUSBOT_TOKEN", "label": "Token", "type": "secret" }
+  ]
+}
+```
+
+- `kind`: `service` becomes a systemd user service (`term7-<id>`), with `config` as environment variables; `mcp` is
+  registered with `claude mcp add-json -s user` in the chosen accounts.
+- `entry`: the folder's Python script (run with `python3`).
+- Field `type`: `text`, `url`, `secret` or `number`.
+- New files go into the `.deb` through `bundle.linux.deb.files` in `src-tauri/tauri.conf.json`.
 
 ## Tests
 

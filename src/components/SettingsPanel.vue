@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import type { ClaudeUsage } from "../lib/pty";
+import ExtensionsList from "./ExtensionsList.vue";
 import { loadSettings, saveSettings, setApiEnabled, VOICE_PRESETS, type VoiceSettings } from "../lib/settings";
 
 /** Configurações do term7: uso do Claude na barra e ditado por voz. */
@@ -14,6 +15,12 @@ const newKey = ref("");
 const status = ref<{ ok: boolean; text: string } | null>(null);
 const saving = ref(false);
 const api = ref<{ enabled: boolean; error: string | null }>({ enabled: false, error: null });
+
+/** Instalar uma extensão liga a API: relê o estado pra o botão acompanhar. */
+async function refreshApi() {
+  const view = await loadSettings().catch(() => null);
+  if (view) api.value = { enabled: view.api_enabled, error: view.api_error };
+}
 
 async function toggleApi() {
   try {
@@ -172,6 +179,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
             </button>
           </div>
           <small v-if="api.error" class="api-error">{{ api.error }}</small>
+          <ExtensionsList @changed="refreshApi" />
         </section>
 
         <footer>

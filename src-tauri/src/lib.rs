@@ -2,6 +2,7 @@ mod agents;
 mod api;
 mod clipboard;
 mod definition;
+mod extensions;
 mod claude;
 mod files;
 mod gh;
@@ -59,6 +60,9 @@ pub fn run() {
             settings::settings_save,
             settings::settings_set_api,
             api::api_respond,
+            extensions::extensions_list,
+            extensions::extension_install,
+            extensions::extension_uninstall,
             voice::voice_start,
             voice::voice_stop,
             voice::voice_cancel,
