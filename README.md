@@ -57,6 +57,9 @@ including its subagents, MCP servers and usage limits.
 
 **Also**
 - Voice dictation: any OpenAI-compatible API (Groq is preset) or local [whisper.cpp](https://github.com/ggml-org/whisper.cpp).
+  End with the Portuguese word “enviar” to send it with Enter.
+- Read aloud: Claude's reply is spoken when it finishes (always, or only after a dictation), through the
+  dictation API or a separate one (OpenAI speaks Portuguese; Groq's voices are English-only).
 - Anonymous mode: scrambles all text on screen so you can record without exposing anything.
 - In-app updates when a new release comes out.
 

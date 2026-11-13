@@ -31,5 +31,7 @@ describe("formulário da extensão", () => {
     expect(configToSend(ext, form)).toEqual({ URL: "http://x", TOKEN: null, EVERY: "30" });
     expect(configToSend(ext, form, new Set(["TOKEN"]))).toEqual({ URL: "http://x", TOKEN: "", EVERY: "30" });
     expect(configToSend(ext, { ...form, TOKEN: "novo" }).TOKEN).toBe("novo");
+    // Campo numérico editado na tela chega como número.
+    expect(configToSend(ext, { ...form, EVERY: 45 }).EVERY).toBe("45");
   });
 });

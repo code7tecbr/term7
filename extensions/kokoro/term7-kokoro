@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+"""Extensão Kokoro do term7: voz local pra leitura em voz alta das respostas do Claude.
+
+Gera a fala na própria máquina com o Kokoro-82M (int8, via kokoro-onnx): nada sai
+da máquina e não tem cota. O term7 chama uma vez por trecho:
+
+  term7-kokoro OUT.wav   < texto     gera o .wav do texto
+  term7-kokoro --setup               cria o ambiente e baixa o modelo (~120 MB)
+
+As dependências (kokoro-onnx, onnxruntime) ficam num venv próprio em
+$XDG_DATA_HOME/term7/kokoro, longe do Python do sistema. Este arquivo roda com o
+python3 do sistema e, se preciso, se reexecuta com o do venv.
+
+Configuração ($XDG_CONFIG_HOME/term7/kokoro.env, gravada pela tela de extensões):
+  KOKORO_VOICE    voz (padrão pm_alex; pt-BR: pm_alex, pm_santa, pf_dora)
+  KOKORO_LANG     idioma da pronúncia (padrão pt-br; inglês: en-us)
+  KOKORO_SPEED    velocidade da fala (padrão 1.0; 0.8 = mais devagar)
+  KOKORO_THREADS  núcleos usados pra gerar (padrão 4)
+"""
+
+import os
+import subprocess
+import sys
+import urllib.request
+
+MODEL_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/"
+MODEL_FILES = ("kokoro-v1.0.int8.onnx", "voices-v1.0.bin")
+PACKAGES = ("kokoro-onnx==0.6.1", "soundfile")
+DEFAULTS = {"KOKORO_VOICE": "pm_alex", "KOKORO_LANG": "pt-br", "KOKORO_SPEED": "1.0", "KOKORO_THREADS": "4"}
+
+
+def data_dir():
+    base = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    return os.path.join(base, "term7", "kokoro")
+
+
+def env_file():
+    base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    return os.path.join(base, "term7", "kokoro.env")
+
+
+def venv_python():
+    return os.path.join(data_dir(), "venv", "bin", "python")
+
+
+def parse_env(text):
+    """Lê CHAVE="valor" (o formato que o term7 grava)."""
+    out = {}
+    for line in text.splitlines():
+        key, sep, value = line.strip().partition("=")
+        if not sep or key.startswith("#"):
+            continue
+        if len(value) >= 2 and value[0] == value[-1] == '"':
+            value = value[1:-1].replace('\\"', '"').replace("\\\\", "\\")
+        out[key] = value
+    return out
+
+
+def settings(saved):
+    """Configuração validada; valor estranho cai no padrão em vez de derrubar a fala."""
+    cfg = {**DEFAULTS, **{k: v for k, v in saved.items() if v}}
+    try:
+        speed = min(2.0, max(0.5, float(cfg["KOKORO_SPEED"].replace(",", "."))))
+    except ValueError:
+        speed = 1.0
+    try:
+        threads = max(1, min(os.cpu_count() or 1, int(cfg["KOKORO_THREADS"])))
+    except ValueError:
+        threads = 4
+    return {"voice": cfg["KOKORO_VOICE"], "lang": cfg["KOKORO_LANG"], "speed": speed, "threads": threads}
+
+
+def load_settings():
+    try:
+        with open(env_file(), encoding="utf-8") as f:
+            return settings(parse_env(f.read()))
+    except OSError:
+        return settings({})
+
+
+def download(url, path):
+    """Baixa num .part e renomeia: download interrompido não vira modelo quebrado."""
+    tmp = path + ".part"
+    urllib.request.urlretrieve(url, tmp)
+    os.replace(tmp, path)
+
+
+def setup():
+    root = data_dir()
+    os.makedirs(root, exist_ok=True)
+    ready = os.path.join(root, "ready")
+    if os.path.exists(ready):
+        os.remove(ready)
+    if not os.path.exists(venv_python()):
+        print("Criando o ambiente Python…", flush=True)
+        subprocess.run([sys.executable, "-m", "venv", os.path.join(root, "venv")], check=True)
+    print("Instalando o kokoro-onnx…", flush=True)
+    subprocess.run([venv_python(), "-m", "pip", "install", "-q", "--disable-pip-version-check", *PACKAGES], check=True)
+    for name in MODEL_FILES:
+        path = os.path.join(root, name)
+        if not os.path.exists(path):
+            print(f"Baixando {name}…", flush=True)
+            download(MODEL_URL + name, path)
+    open(ready, "w").close()
+    print("Pronto.")
+
+
+def speak(out_path, text):
+    import onnxruntime as ort
+    import soundfile as sf
+    from kokoro_onnx import Kokoro
+
+    cfg = load_settings()
+    root = data_dir()
+    opts = ort.SessionOptions()
+    # Sem limite o ONNX Runtime usa todos os núcleos: a fala fica pesada pro resto da máquina.
+    opts.intra_op_num_threads = cfg["threads"]
+    opts.inter_op_num_threads = 1
+    session = ort.InferenceSession(os.path.join(root, MODEL_FILES[0]), opts, providers=["CPUExecutionProvider"])
+    kokoro = Kokoro.from_session(session, os.path.join(root, MODEL_FILES[1]))
+    samples, rate = kokoro.create(text, voice=cfg["voice"], speed=cfg["speed"], lang=cfg["lang"])
+    sf.write(out_path, samples, rate, subtype="PCM_16")
+
+
+def main(argv):
+    if argv[1:] == ["--setup"]:
+        return setup()
+    if len(argv) != 2 or argv[1].startswith("-"):
+        sys.exit("Uso: term7-kokoro OUT.wav < texto   |   term7-kokoro --setup")
+    if not os.path.exists(os.path.join(data_dir(), "ready")):
+        sys.exit("a extensão Kokoro não terminou de instalar (Configurações → Extensões)")
+    # Rodando com o python3 do sistema: passa pro do venv, onde estão as dependências.
+    if os.path.realpath(sys.prefix) != os.path.realpath(os.path.join(data_dir(), "venv")):
+        os.execv(venv_python(), [venv_python(), os.path.abspath(__file__), *argv[1:]])
+    text = sys.stdin.read().strip()
+    if not text:
+        sys.exit("texto vazio")
+    speak(argv[1], text)
+
+
+if __name__ == "__main__":
+    main(sys.argv)
