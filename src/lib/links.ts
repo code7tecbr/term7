@@ -3,7 +3,10 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { openUrl } from "./github";
 
 // Mesma ideia do regex do addon: termina antes de pontuação final (ex.: "veja https://x.com.").
-const URL_RE = /https?:\/\/[^\s"'<>`]*[^\s"'<>`.,;:!?)\]}]/g;
+// file:/// entra pros relatórios HTML locais; o backend só abre os .html/.htm.
+// Sem a flag "g": o addon acrescenta a dele e "gg" é regex inválido.
+export const URL_PATTERN = /(?:https?:\/\/|file:\/\/\/)[^\s"'<>`]*[^\s"'<>`.,;:!?)\]}]/;
+const URL_RE = new RegExp(URL_PATTERN.source, "g");
 const LINK_COLOR = "#7aa2f7";
 
 /**
@@ -19,7 +22,8 @@ export function attachLinks(term: Terminal) {
       event.preventDefault();
       openUrl(uri).catch(() => {});
     },
-    allowNonHttpProtocols: false,
+    // Deixa passar o file:// (relatório HTML local); o backend recusa o resto.
+    allowNonHttpProtocols: true,
   };
 
   // URLs em texto puro.
@@ -27,7 +31,7 @@ export function attachLinks(term: Terminal) {
     new WebLinksAddon((event, uri) => {
       event.preventDefault();
       openUrl(uri).catch(() => {});
-    }),
+    }, { urlRegex: URL_PATTERN }),
   );
 
   // A cor é refeita a cada saída nova, só na área visível: programas como o
