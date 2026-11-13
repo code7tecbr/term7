@@ -11,6 +11,7 @@ mod pty;
 mod session;
 mod settings;
 mod suggest;
+mod tasks;
 mod update;
 mod usage;
 mod voice;
@@ -51,6 +52,8 @@ pub fn run() {
             suggest::claude_suggestions,
             agents::claude_agents,
             agents::claude_agent_steps,
+            tasks::claude_tasks,
+            tasks::claude_task_log,
             definition::find_definitions,
             definition::resolve_import_path,
             files::read_text_file,

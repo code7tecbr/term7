@@ -12,6 +12,7 @@ import BranchPicker from "./components/BranchPicker.vue";
 import McpMenu from "./components/McpMenu.vue";
 import TopBar from "./components/TopBar.vue";
 import AgentsMenu from "./components/AgentsMenu.vue";
+import TasksMenu from "./components/TasksMenu.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
 import { loadSettings, pickFiles, shellQuote, voiceCancel, voiceStart, voiceStop } from "./lib/settings";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -25,8 +26,10 @@ import type { PathTarget } from "./lib/paths";
 const FileView = defineAsyncComponent(() => import("./components/FileView.vue"));
 // Sob demanda: traz o marked e o DOMPurify só quando o popup abre.
 const AgentSteps = defineAsyncComponent(() => import("./components/AgentSteps.vue"));
+const TaskLog = defineAsyncComponent(() => import("./components/TaskLog.vue"));
 import {
   claudeAgents,
+  claudeTasks,
   claudeUsage,
   claudeUsageSetup,
   type ClaudeUsage,
@@ -34,6 +37,7 @@ import {
   claudeHooksStatus,
   claudeMcpList,
   type Agent,
+  type BgTask,
   type ClaudeHooksStatus,
   type ClaudeState,
   type McpServer,
@@ -301,6 +305,29 @@ async function pollAgents() {
 }
 const agentsTimer = setInterval(pollAgents, 2000);
 
+// ---- comandos em segundo plano do Claude da aba ativa (menu "Tarefas") ----
+const tasks = ref<BgTask[] | null>(null);
+const tasksOpen = ref(false);
+/** Tarefa aberta no popup do log. */
+const taskView = ref<string | null>(null);
+const viewedTask = computed(() => tasks.value?.find((t) => t.id === taskView.value));
+let tasksAt = 0;
+
+/** Mesmo ritmo dos agentes: rápido com o menu aberto ou tarefa rodando. */
+async function pollTasks() {
+  const tab = activeTab.value;
+  const session = tab && sessions.get(tab.id);
+  if (tab?.process !== "claude" || !session) {
+    tasks.value = null;
+    return;
+  }
+  const busy = tasksOpen.value || taskView.value || tasks.value?.some((t) => t.status === "running");
+  if (!busy && Date.now() - tasksAt < 10_000) return;
+  tasksAt = Date.now();
+  tasks.value = await claudeTasks(session.id).catch(() => tasks.value);
+}
+const tasksTimer = setInterval(pollTasks, 2000);
+
 // ---- uso da assinatura (5h, 7d, Fable...) do Claude da aba ----
 const usage = ref<ClaudeUsage | null>(null);
 async function pollUsage() {
@@ -330,11 +357,15 @@ watch(
   () => [activeTab.value?.id, activeTab.value?.process],
   () => ((agents.value = null), (agentView.value = null), (agentsAt = 0), pollAgents()),
 );
+watch(
+  () => [activeTab.value?.id, activeTab.value?.process],
+  () => ((tasks.value = null), (taskView.value = null), (tasksAt = 0), pollTasks()),
+);
 
 // Fechou o Claude ou trocou de aba: os menus não fazem mais sentido.
 watch(
   () => [activeTab.value?.id, activeTab.value?.process],
-  () => activeTab.value?.process !== "claude" && ((mcpOpen.value = false), (agentsOpen.value = false)),
+  () => activeTab.value?.process !== "claude" && ((mcpOpen.value = false), (agentsOpen.value = false), (tasksOpen.value = false)),
 );
 
 async function installClaudeHooks() {
@@ -597,6 +628,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("blur", onWindowBlur);
   clearInterval(pollTimer);
   clearInterval(agentsTimer);
+  clearInterval(tasksTimer);
   clearInterval(usageTimer);
   clearInterval(voiceTimer);
   if (voice.value === "recording") voiceCancel().catch(() => {});
@@ -616,6 +648,9 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
       :mcp="activeTab?.process === 'claude' ? activeMcp : null"
       :mcp-open="mcpOpen"
       @toggle-agents="agentsOpen = !agentsOpen"
+      :tasks="tasks"
+      :tasks-open="tasksOpen"
+      @toggle-tasks="tasksOpen = !tasksOpen"
       :voice="voice"
       :voice-secs="voiceSecs"
       @toggle-mcp="toggleMcp"
@@ -747,6 +782,19 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
       :agent="viewedAgent"
       :session="agentSession"
       @close="agentView = null"
+    />
+    <TasksMenu
+      v-if="tasksOpen && tasks?.length"
+      :tasks="tasks"
+      @close="tasksOpen = false"
+      @open="(id) => ((taskView = id), (tasksOpen = false))"
+    />
+    <TaskLog
+      v-if="viewedTask && agentSession !== undefined"
+      :key="viewedTask.id"
+      :task="viewedTask"
+      :session="agentSession"
+      @close="taskView = null"
     />
     <McpMenu
       v-if="mcpOpen && activeTab"
