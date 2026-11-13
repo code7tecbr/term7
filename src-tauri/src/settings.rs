@@ -31,6 +31,8 @@ pub struct VoiceSettings {
     pub language: String,
     /// Para de gravar sozinho quando a fala termina (sem o segundo clique).
     pub auto_stop: bool,
+    /// Frase que, no fim do ditado, manda com Enter (o frontend reconhece); vazia desliga.
+    pub send_phrase: String,
 }
 
 impl Default for VoiceSettings {
@@ -44,6 +46,7 @@ impl Default for VoiceSettings {
             local_model: String::new(),
             language: "pt".into(),
             auto_stop: true,
+            send_phrase: "term7 pronto".into(),
         }
     }
 }

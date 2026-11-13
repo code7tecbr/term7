@@ -10,8 +10,10 @@ export interface VoiceSettings {
   language: string;
   /** Para de gravar sozinho quando a fala termina. */
   auto_stop: boolean;
+  /** Frase que, no fim do ditado, manda com Enter; vazia desliga. */
+  send_phrase: string;
 }
-/** Quando ler a resposta do Claude: nunca, só depois de um ditado, ou sempre. */
+/** Quando ler a resposta do Claude sozinho: nunca (só pelo ▶), depois de um ditado, ou sempre. */
 export type SpeakMode = "off" | "dictated" | "always";
 export interface SpeechSettings {
   mode: SpeakMode;
@@ -62,7 +64,8 @@ export const SPEECH_PRESETS = [
 
 /** Voltam quando a fala acaba ou é interrompida. */
 export const speakText = (text: string) => invoke<void>("speak_text", { text });
-export const speakClaudeReply = (id: number) => invoke<void>("speak_claude_reply", { id });
+/** false quando não havia resposta pra ler. */
+export const speakClaudeReply = (id: number) => invoke<boolean>("speak_claude_reply", { id });
 export const speakStop = () => invoke<void>("speak_stop");
 /** Extensões de voz instaladas: [id, nome]. */
 export const installedTts = () => invoke<[string, string][]>("extensions_tts");

@@ -36,7 +36,7 @@ src/
   lib/shortcuts.ts        atalhos globais (o terminal ignora essas teclas)
   lib/suggestions.ts      botões ▶/⤓ ao lado dos comandos que o Claude sugeriu (procura o texto na tela)
   lib/settings.ts         configurações, ditado (voice_*), leitura em voz alta (speak_*) e seletor de arquivos; shellQuote dos caminhos colados
-  lib/voice.ts            palavra-chave do ditado (“enviar” no fim = Enter)
+  lib/voice.ts            frase de enviar do ditado (“term7 pronto” no fim = Enter; aceita as grafias do Whisper)
   lib/update.ts           confere/instala a versão nova (botão ao lado da versão, na barra)
   lib/api.ts, screens.ts  API das extensões: atende os pedidos do api.rs (abas, tela, mandar pro Claude com fila)
   state/extStatus.ts      status publicado por extensões (status.set); ExtStatus.vue desenha na barra de status

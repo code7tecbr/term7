@@ -58,7 +58,7 @@ subagentes, os servidores MCP e os limites de uso.
 **Também**
 - Ditado por voz: qualquer API compatível com a da OpenAI (a Groq vem preenchida) ou o
   [whisper.cpp](https://github.com/ggml-org/whisper.cpp) local, sem nada sair da máquina.
-  Terminar a fala com “enviar” manda com Enter.
+  Terminar a fala com “term7 pronto” (configurável) manda com Enter.
 - Leitura em voz alta: a resposta do Claude é lida quando ele termina (sempre, ou só depois de um ditado),
   pela mesma API do ditado ou por outra (a OpenAI fala português; a voz do Groq, só inglês).
 - Modo anônimo: embaralha todo o texto da tela, pra gravar sem expor nada.
