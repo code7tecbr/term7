@@ -33,13 +33,17 @@ docker compose run --rm --no-deps dev bash -c "cd src-tauri && rustup component 
 
 ## Testar o app de verdade
 
-Interação (digitar, clicar, desempenho) se testa no app instalado, não no Docker:
+Interação (digitar, clicar, desempenho) se testa no app nativo, não no Docker. Use a build de
+teste, que roda ao lado da release instalada sem mexer nela:
 
 ```sh
-docker compose run --rm build     # gera o .deb em dist-deb/ (mesmo Ubuntu 24.04 do CI)
-scripts/install-local.sh          # instala em ~/.local, sem sudo (--remove desinstala)
-~/.local/bin/term7
+docker compose run --rm build-test   # .deb "term7-dev" em dist-test/ (outro nome e identificador)
+scripts/run-test.sh                  # extrai em dist-test/root e abre, sem instalar nada
 ```
+
+A build de teste tem configurações, sessão e janela próprias (`br.tec.code7.term7.dev`). **Não use
+`scripts/install-local.sh` pra testar**: ele grava `~/.local/bin/term7` e o atalho do lançador, que passam
+por cima da release que o mantenedor usa no dia a dia.
 
 `docker compose run --rm dev` abre a interface, mas o container não tem GPU: tudo fica lento e o
 xterm.js com WebGL não se comporta como no app real. Use o Docker só pra compilar.

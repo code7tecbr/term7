@@ -1,7 +1,10 @@
 //! Tela de extensões: lista as que vêm no `.deb` (`<prefixo>/share/term7/extensions`,
 //! uma pasta com `extension.json` cada) e instala pelo tipo:
 //! - `service`: serviço do usuário no systemd, com a configuração num arquivo 600;
-//! - `mcp`: `claude mcp add-json -s user` em cada conta do Claude escolhida.
+//! - `mcp`: `claude mcp add-json -s user` em cada conta do Claude escolhida;
+//! - `tts`: voz local pra leitura em voz alta. Instalar grava a configuração e roda
+//!   `<entry> --setup` (venv e modelo em `$XDG_DATA_HOME/term7/<id>`); a fala chama
+//!   `<entry> OUT.wav` com o texto no stdin (ver speech.rs).
 //! A extensão roda direto da pasta do pacote: atualizar o term7 atualiza ela.
 
 use std::{
@@ -44,7 +47,7 @@ struct Manifest {
     description: String,
     #[serde(default)]
     link: Option<String>,
-    /// service | mcp
+    /// service | mcp | tts
     kind: String,
     entry: String,
     #[serde(default)]
@@ -226,6 +229,54 @@ fn service_running(id: &str) -> bool {
     systemctl(&["is-active", "--quiet", &unit_name(id)]).is_ok()
 }
 
+// ---- tipo tts: voz local ----
+
+fn data_home() -> Result<PathBuf, String> {
+    Ok(std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).unwrap_or(home()?.join(".local/share")))
+}
+
+/// Venv e modelo da extensão; `ready` dentro dela marca que o `--setup` terminou.
+fn tts_dir(id: &str) -> Result<PathBuf, String> {
+    Ok(data_home()?.join("term7").join(id))
+}
+
+fn tts_ready(id: &str) -> Result<bool, String> {
+    Ok(tts_dir(id)?.join("ready").is_file())
+}
+
+/// Roda o `--setup` (cria o venv e baixa o modelo; pode levar minutos).
+fn tts_setup(python: &Path, script: &Path) -> Result<(), String> {
+    let out = Command::new(python).arg(script).arg("--setup").stdin(Stdio::null()).output().map_err(|e| e.to_string())?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let err = String::from_utf8_lossy(&out.stderr);
+    let last = err.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
+    Err(format!("a instalação falhou: {last}"))
+}
+
+/// Comando de uma extensão de voz instalada: (python3, script). Pra speech.rs.
+pub fn tts_command(id: &str) -> Result<(PathBuf, PathBuf), String> {
+    let (m, dir) = find(id)?;
+    if m.kind != "tts" {
+        return Err(format!("{} não é uma extensão de voz", m.name));
+    }
+    if !tts_ready(id)? {
+        return Err(format!("instale a extensão “{}” (Configurações → Extensões)", m.name));
+    }
+    Ok((python3().ok_or("precisa do python3 instalado")?, dir.join(m.entry)))
+}
+
+/// Extensões de voz instaladas, pra escolher na leitura em voz alta: (id, nome).
+pub fn installed_tts() -> Vec<(String, String)> {
+    let Some(dir) = extensions_dir() else { return Vec::new() };
+    load_manifests(&dir)
+        .into_iter()
+        .filter(|(m, _)| m.kind == "tts" && tts_ready(&m.id).unwrap_or(false))
+        .map(|(m, _)| (m.id, m.name))
+        .collect()
+}
+
 // ---- tipo mcp: contas do Claude ----
 
 /// Contas do Claude: a padrão (`~/.claude.json`) e cada `~/.claude-*` com um
@@ -294,6 +345,7 @@ fn view(m: Manifest) -> Result<ExtensionView, String> {
     let secrets_set = saved.keys().filter(|k| secret(k)).cloned().collect();
     let (installed, running, accounts) = match m.kind.as_str() {
         "service" => (unit_path(&m.id)?.is_file(), service_running(&m.id), Vec::new()),
+        "tts" => (tts_ready(&m.id)?, false, Vec::new()),
         _ => {
             let accounts: Vec<_> = claude_accounts(&home()?).into_iter().map(|(a, _)| a).collect();
             (accounts.iter().any(|a| a.installed), false, accounts)
@@ -336,6 +388,15 @@ fn install(id: &str, config: BTreeMap<String, Option<String>>, accounts: Vec<Str
             // restart também sobe se estava parado, e pega a configuração nova.
             systemctl(&["restart", &unit_name(id)])?;
         }
+        "tts" => {
+            let env = env_path(id)?;
+            let saved = fs::read_to_string(&env).map(|t| parse_env(&t)).unwrap_or_default();
+            write_private(&env, &render_env(&merge_config(&m.config, &saved, &config)?))?;
+            // Já instalada: salvar só troca a configuração, sem baixar de novo.
+            if !tts_ready(id)? {
+                tts_setup(&python, &script)?;
+            }
+        }
         "mcp" => {
             let home = home()?;
             let bin = claude_bin(&home).ok_or("não achei o comando claude (Claude Code)")?;
@@ -367,6 +428,10 @@ fn uninstall(id: &str) -> Result<ExtensionView, String> {
             let _ = fs::remove_file(env_path(id)?);
             let _ = systemctl(&["daemon-reload"]);
         }
+        "tts" => {
+            let _ = fs::remove_dir_all(tts_dir(id)?);
+            let _ = fs::remove_file(env_path(id)?);
+        }
         _ => return install(id, BTreeMap::new(), Vec::new()),
     }
     view(m)
@@ -382,7 +447,8 @@ pub async fn extensions_list() -> Result<Vec<ExtensionView>, String> {
 }
 
 /// Instala ou atualiza (configuração/contas). `config`: secreto `null` mantém o salvo.
-/// Liga a API: sem ela nenhuma extensão funciona.
+/// Liga a API: sem ela as extensões que falam com o term7 não funcionam (a de voz
+/// é chamada pelo próprio term7 e não precisa).
 #[tauri::command]
 pub async fn extension_install(
     app: AppHandle,
@@ -390,8 +456,17 @@ pub async fn extension_install(
     config: BTreeMap<String, Option<String>>,
     accounts: Vec<String>,
 ) -> Result<ExtensionView, String> {
-    crate::settings::enable_api(&app)?;
+    let lookup = id.clone();
+    if blocking(move || find(&lookup)).await?.0.kind != "tts" {
+        crate::settings::enable_api(&app)?;
+    }
     blocking(move || install(&id, config, accounts)).await
+}
+
+/// Extensões de voz instaladas (id e nome), pras configurações da leitura em voz alta.
+#[tauri::command]
+pub async fn extensions_tts() -> Result<Vec<(String, String)>, String> {
+    blocking(|| Ok(installed_tts())).await
 }
 
 #[tauri::command]
@@ -418,7 +493,14 @@ mod tests {
     fn le_os_manifestos_do_repositorio() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../extensions");
         let found: Vec<_> = load_manifests(&dir).into_iter().map(|(m, p)| (m.id, m.kind, p.join(m.entry).is_file())).collect();
-        assert_eq!(found, [("mcp".into(), "mcp".into(), true), ("statusbot".into(), "service".into(), true)]);
+        assert_eq!(
+            found,
+            [
+                ("mcp".into(), "mcp".into(), true),
+                ("kokoro".into(), "tts".into(), true),
+                ("statusbot".into(), "service".into(), true)
+            ]
+        );
     }
 
     #[test]

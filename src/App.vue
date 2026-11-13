@@ -14,7 +14,9 @@ import TopBar from "./components/TopBar.vue";
 import AgentsMenu from "./components/AgentsMenu.vue";
 import TasksMenu from "./components/TasksMenu.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
-import { loadSettings, pickFiles, shellQuote, voiceCancel, voiceStart, voiceStop } from "./lib/settings";
+import { loadSettings, pickFiles, shellQuote, speakClaudeReply, speakStop, voiceCancel, voiceStart, voiceStop } from "./lib/settings";
+import { voiceCommand } from "./lib/voice";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { anon } from "./state/anon";
 import PreviewPopup from "./components/PreviewPopup.vue";
@@ -195,6 +197,7 @@ const isVisible = (tab: Tab) => isActive(tab) && windowFocused.value;
 
 function onClaudeChange(tab: Tab, state: ClaudeState | null) {
   tab.claude = state;
+  if (state === "done") speakReply(tab);
   if (state === "waiting" || state === "done") {
     if (!isVisible(tab)) tab.attention = state;
     // Janela em segundo plano: pede atenção (pisca no lançador/barra de tarefas).
@@ -471,19 +474,56 @@ function pasteInto(target: PtySession | undefined, text: string) {
 }
 
 const settingsOpen = ref(false);
-const voice = ref<"idle" | "recording" | "transcribing">("idle");
+const voice = ref<"idle" | "recording" | "transcribing" | "speaking">("idle");
 const voiceSecs = ref(0);
 let voiceTimer: ReturnType<typeof setInterval> | undefined;
 /** Fixado no começo da gravação: trocar o foco enquanto fala não muda o destino. */
 let voiceTarget: PtySession | undefined;
+let voiceTab: Tab | undefined;
+/** Abas cujo Claude recebeu um ditado: no modo "quando a pergunta foi ditada", a resposta é lida. */
+const dictatedTabs = new Set<number>();
+/** Só a fala mais recente volta o microfone pro normal (uma nova interrompe a anterior). */
+let speakSeq = 0;
+
+async function speakReply(tab: Tab) {
+  const dictated = dictatedTabs.delete(tab.id);
+  const session = sessions.get(tab.id);
+  const speech = (await loadSettings().catch(() => null))?.speech;
+  if (!session || !speech || speech.mode === "off") return;
+  if (speech.mode === "dictated" ? !dictated : !isActive(tab)) return;
+  // Gravando ou transcrevendo: falar por cima atrapalharia o ditado.
+  if (voice.value === "recording" || voice.value === "transcribing") return;
+  const seq = ++speakSeq;
+  voice.value = "speaking";
+  try {
+    await speakClaudeReply(session.id);
+  } catch (err) {
+    flash(`Voz: ${err}`);
+  } finally {
+    if (seq === speakSeq && voice.value === "speaking") voice.value = "idle";
+  }
+}
 
 
 async function toggleVoice() {
+  if (voice.value === "speaking") {
+    speakSeq++;
+    voice.value = "idle";
+    speakStop().catch(() => {});
+    return;
+  }
   if (voice.value === "recording") {
     clearInterval(voiceTimer);
     voice.value = "transcribing";
     try {
-      pasteInto(voiceTarget, await voiceStop());
+      const { text, send } = voiceCommand(await voiceStop());
+      pasteInto(voiceTarget, text);
+      if (voiceTab && voiceTarget && voiceTarget === sessions.get(voiceTab.id)) dictatedTabs.add(voiceTab.id);
+      if (send && voiceTarget) {
+        // Enter separado da colagem, como na API: colado junto, o Claude não envia.
+        if (text) await new Promise((r) => setTimeout(r, 80));
+        voiceTarget.write("\r").catch(() => {});
+      }
     } catch (err) {
       flash(`Ditado: ${err}`);
     } finally {
@@ -500,6 +540,7 @@ async function toggleVoice() {
     return flash(`Ditado: falta ${missing}`);
   }
   voiceTarget = focusedSession();
+  voiceTab = activeTab.value ?? undefined;
   try {
     await voiceStart();
   } catch (err) {
@@ -515,6 +556,16 @@ async function attachFiles() {
   const files = await pickFiles().catch((err) => (flash(`Anexar: ${err}`), []));
   if (files.length) pasteInto(target, files.map(shellQuote).join(" ") + " ");
 }
+
+// Parada automática: o backend avisa quando a fala acabou (ou quando ninguém falou).
+const unlistenAutoStop = listen<boolean>("voice-auto-stop", ({ payload: spoke }) => {
+  if (voice.value !== "recording") return;
+  if (spoke) return void toggleVoice();
+  clearInterval(voiceTimer);
+  voice.value = "idle";
+  voiceCancel().catch(() => {});
+  flash("Ditado: não ouvi nada, gravação descartada.");
+});
 
 // Arquivo arrastado pra janela: cola o caminho no terminal em que caiu.
 const unlistenDrop = getCurrentWebview().onDragDropEvent((e) => {
@@ -606,6 +657,8 @@ function run(action: Action) {
       return;
     case "togglePanel":
       return togglePanel();
+    case "toggleVoice":
+      return void toggleVoice();
   }
 }
 
@@ -633,6 +686,7 @@ onBeforeUnmount(() => {
   clearInterval(voiceTimer);
   if (voice.value === "recording") voiceCancel().catch(() => {});
   unlistenDrop.then((off) => off());
+  unlistenAutoStop.then((off) => off());
 });
 
 const isActive = (tab: Tab) => tab.id === store.activeId;

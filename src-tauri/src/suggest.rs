@@ -91,7 +91,7 @@ pub(crate) fn transcript(pid: u32, proc: &Proc) -> Option<PathBuf> {
     std::fs::read_dir(projects).ok()?.flatten().map(|e| e.path().join(&name)).find(|p| p.exists())
 }
 
-fn read_tail(path: &Path) -> Option<String> {
+pub(crate) fn read_tail(path: &Path) -> Option<String> {
     let mut file = std::fs::File::open(path).ok()?;
     let len = file.metadata().ok()?.len();
     file.seek(SeekFrom::Start(len.saturating_sub(TAIL_BYTES))).ok()?;

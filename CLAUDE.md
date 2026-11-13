@@ -9,12 +9,12 @@ A v1 é web-based de propósito; a v2 planeja migrar pra renderização nativa e
 npm test                          # testes do frontend (Vitest)
 npm run build                     # type-check (vue-tsc) + build do frontend; rode depois de mexer em src/
 docker compose run --rm build     # compila o .deb em dist-deb/ (mesmo Ubuntu 24.04 do CI)
-scripts/install-local.sh          # instala o .deb em ~/.local (sem sudo) pra testar de verdade
+docker compose run --rm build-test && scripts/run-test.sh   # build de teste (term7-dev) ao lado da release, sem instalar
 docker compose run --rm --no-deps dev bash -c "cd src-tauri && cargo check && cargo test"   # checa e testa o Rust
 ```
 
 - A máquina de desenvolvimento **não tem Rust instalado**: todo `cargo` roda dentro do container.
-- **Não teste interação pelo Docker** (`compose run dev`): lá não há GPU e tudo fica lento. Compile no container, instale com `scripts/install-local.sh` e abra `~/.local/bin/term7`.
+- **Não teste interação pelo Docker** (`compose run dev`): lá não há GPU e tudo fica lento. Compile a build de teste no container e abra com `scripts/run-test.sh`. Não use `scripts/install-local.sh` pra testar: ele passa por cima da release instalada.
 - Validação = `npm test` (Vitest, `src/**/*.test.ts`) + `npm run build` + `cargo check`/`cargo test` sem warnings + testar no app. O CI roda os testes em todo PR.
 - Lógica ou parser novo vem com teste: no Rust, no `mod tests` do arquivo, com dados no formato real (anonimizados).
 
@@ -35,7 +35,8 @@ src/
   lib/links.ts, paths.ts  URLs e caminhos de arquivo clicáveis na saída do terminal
   lib/shortcuts.ts        atalhos globais (o terminal ignora essas teclas)
   lib/suggestions.ts      botões ▶/⤓ ao lado dos comandos que o Claude sugeriu (procura o texto na tela)
-  lib/settings.ts         configurações, ditado (voice_*) e seletor de arquivos; shellQuote dos caminhos colados
+  lib/settings.ts         configurações, ditado (voice_*), leitura em voz alta (speak_*) e seletor de arquivos; shellQuote dos caminhos colados
+  lib/voice.ts            palavra-chave do ditado (“enviar” no fim = Enter)
   lib/update.ts           confere/instala a versão nova (botão ao lado da versão, na barra)
   lib/api.ts, screens.ts  API das extensões: atende os pedidos do api.rs (abas, tela, mandar pro Claude com fila)
   state/extStatus.ts      status publicado por extensões (status.set); ExtStatus.vue desenha na barra de status
@@ -50,12 +51,13 @@ src-tauri/src/
   files.rs                leitura de arquivo pro visualizador; resolve_paths (caminhos clicáveis)
   settings.rs             settings.json (600); a chave da API de transcrição nunca volta pro frontend
   voice.rs                ditado: pw-record/arecord -> API compatível com a OpenAI (curl, chave pelo stdin) ou whisper.cpp
+  speech.rs               leitura em voz alta: última resposta do Claude -> /audio/speech em trechos (curl) -> pw-play/aplay
   session.rs              session.json em ~/.local/share/br.tec.code7.term7/
   update.rs               atualização: última release via `gh api`, baixa o .deb e instala com `pkexec apt-get`
   api.rs                  API local das extensões: socket $XDG_RUNTIME_DIR/term7/api.sock (desligada por padrão), repassa ao frontend
-  extensions.rs           tela de extensões: lê os extension.json do pacote (share/term7/extensions), instala como serviço systemd ou MCP nas contas do Claude
+  extensions.rs           tela de extensões: lê os extension.json do pacote (share/term7/extensions), instala como serviço systemd, MCP nas contas do Claude ou voz local (tts: venv + modelo)
   definition.rs           ir pra definição (Ctrl+clique): git grep + linhas com cara de definição; imports relativos
-extensions/               extensões fora do app, via API (mcp/: servidor MCP; statusbot/: status na barra), em Python; docs em extensions/README*.md
+extensions/               extensões fora do app, em Python (mcp/: servidor MCP; statusbot/: status na barra; kokoro/: voz local da leitura em voz alta); docs em extensions/README*.md
 ```
 
 ## Convenções

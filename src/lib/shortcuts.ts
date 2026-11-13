@@ -5,7 +5,8 @@ export type Action =
   | { type: "prevTab" }
   | { type: "goTo"; index: number }
   | { type: "toggleDiff" }
-  | { type: "togglePanel" };
+  | { type: "togglePanel" }
+  | { type: "toggleVoice" };
 
 /** Atalhos globais do app. Retorna null quando a tecla deve ir pro shell. */
 export function matchShortcut(e: KeyboardEvent): Action | null {
@@ -16,6 +17,8 @@ export function matchShortcut(e: KeyboardEvent): Action | null {
   if (ctrlShift && key === "t") return { type: "newTab" };
   if (ctrlShift && key === "w") return { type: "closeTab" };
   if (ctrlShift && key === "g") return { type: "toggleDiff" };
+  // Ditado: mesmo que clicar no microfone (começa, para ou corta a leitura em voz alta).
+  if (ctrlOnly && (e.code === "Space" || e.key === " ")) return { type: "toggleVoice" };
   // Ctrl+' (tecla à esquerda do 1 no ABNT2) ou Ctrl+` (layout US).
   if (e.ctrlKey && !e.altKey && !e.metaKey && (e.code === "Backquote" || e.key === "`")) {
     return { type: "togglePanel" };

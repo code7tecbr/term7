@@ -2,16 +2,64 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import type { ClaudeUsage } from "../lib/pty";
 import ExtensionsList from "./ExtensionsList.vue";
-import { loadSettings, saveSettings, setApiEnabled, VOICE_PRESETS, type VoiceSettings } from "../lib/settings";
+import {
+  installedTts,
+  loadSettings,
+  saveSettings,
+  setApiEnabled,
+  speakText,
+  SPEECH_PRESETS,
+  VOICE_PRESETS,
+  type SpeechSettings,
+  type VoiceSettings,
+} from "../lib/settings";
 
-/** Configurações do term7: uso do Claude na barra e ditado por voz. */
+/** Configurações do term7: uso do Claude na barra, ditado e leitura em voz alta. */
 defineProps<{ usage: ClaudeUsage | null }>();
 const emit = defineEmits<{ close: []; usage: [enabled: boolean] }>();
 
-const voice = reactive<VoiceSettings>({ engine: "api", api_url: "", api_model: "", local_bin: "", local_model: "", language: "" });
+const voice = reactive<VoiceSettings>({
+  engine: "api",
+  api_url: "",
+  api_model: "",
+  local_bin: "",
+  local_model: "",
+  language: "",
+  auto_stop: true,
+});
 const hasKey = ref(false);
 /** Chave digitada agora; vazio = mantém a salva. */
 const newKey = ref("");
+const speech = reactive<SpeechSettings>({
+  mode: "off",
+  engine: "api",
+  extension: "kokoro",
+  same_api: true,
+  api_url: "",
+  api_model: "",
+  voice: "",
+});
+/** Extensões de voz instaladas: [id, nome]. */
+const ttsExtensions = ref<[string, string][]>([]);
+
+/** As três fontes da voz numa escolha só (no backend são engine + same_api). */
+const speechSource = computed({
+  get: () => (speech.engine === "extension" ? "extension" : speech.same_api ? "dictation" : "other"),
+  set: (v: "dictation" | "other" | "extension") => {
+    speech.engine = v === "extension" ? "extension" : "api";
+    if (v !== "extension") speech.same_api = v === "dictation";
+    else if (!ttsExtensions.value.some(([id]) => id === speech.extension) && ttsExtensions.value.length) {
+      speech.extension = ttsExtensions.value[0][0];
+    }
+  },
+});
+
+async function refreshTts() {
+  ttsExtensions.value = await installedTts().catch(() => []);
+}
+const hasSpeechKey = ref(false);
+const newSpeechKey = ref("");
+const testing = ref(false);
 const status = ref<{ ok: boolean; text: string } | null>(null);
 const saving = ref(false);
 const api = ref<{ enabled: boolean; error: string | null }>({ enabled: false, error: null });
@@ -20,6 +68,8 @@ const api = ref<{ enabled: boolean; error: string | null }>({ enabled: false, er
 async function refreshApi() {
   const view = await loadSettings().catch(() => null);
   if (view) api.value = { enabled: view.api_enabled, error: view.api_error };
+  // Instalar ou remover uma extensão de voz muda as opções da leitura em voz alta.
+  await refreshTts();
 }
 
 async function toggleApi() {
@@ -40,17 +90,52 @@ function applyPreset(id: string) {
   voice.api_model = p.model;
 }
 
-async function save(apiKey?: string) {
+// O preset da voz é reconhecido pelo modelo: com "mesma API" a URL é a do ditado.
+const speechPreset = computed(() => SPEECH_PRESETS.find((p) => p.model === speech.api_model)?.id ?? "custom");
+
+function applySpeechPreset(id: string) {
+  const p = SPEECH_PRESETS.find((x) => x.id === id);
+  if (!p) return;
+  speech.api_url = p.url;
+  speech.api_model = p.model;
+  speech.voice = p.voice;
+}
+
+/** Chaves: undefined mantém a salva (ou usa a digitada), "" apaga. */
+async function save(keys: { api?: string; speech?: string } = {}) {
   saving.value = true;
   try {
-    const view = await saveSettings({ ...voice }, apiKey);
+    const view = await saveSettings(
+      { ...voice },
+      { ...speech },
+      keys.api ?? (newKey.value || undefined),
+      keys.speech ?? (newSpeechKey.value || undefined),
+    );
     hasKey.value = view.has_api_key;
+    hasSpeechKey.value = view.has_speech_key;
     newKey.value = "";
+    newSpeechKey.value = "";
     status.value = { ok: true, text: "Salvo." };
+    return true;
   } catch (err) {
     status.value = { ok: false, text: `Não deu pra salvar: ${err}` };
+    return false;
   } finally {
     saving.value = false;
+  }
+}
+
+/** Salva antes: o backend fala com a configuração gravada. */
+async function testSpeech() {
+  if (!(await save())) return;
+  testing.value = true;
+  try {
+    await speakText("Olá! Esta é a voz que vai ler as respostas do Claude.");
+    status.value = { ok: true, text: "Teste de voz concluído." };
+  } catch (err) {
+    status.value = { ok: false, text: `Voz: ${err}` };
+  } finally {
+    testing.value = false;
   }
 }
 
@@ -67,6 +152,9 @@ onMounted(async () => {
   if (view) {
     Object.assign(voice, view.voice);
     hasKey.value = view.has_api_key;
+    Object.assign(speech, view.speech);
+    hasSpeechKey.value = view.has_speech_key;
+    await refreshTts();
     api.value = { enabled: view.api_enabled, error: view.api_error };
   }
 });
@@ -83,7 +171,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
         </button>
       </header>
 
-      <form class="body" @submit.prevent="save(newKey || undefined)">
+      <form class="body" @submit.prevent="save()">
         <section>
           <h2>Claude</h2>
           <div class="usage-row">
@@ -100,7 +188,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
         <section>
           <h2>Ditado por voz</h2>
           <p class="hint">
-            O microfone da barra de cima grava, transcreve e cola o texto no terminal ativo, inclusive no Claude (sem Enter).
+            O microfone da barra de cima (ou <b>Ctrl+Espaço</b>) grava, transcreve e cola o texto no terminal ativo, inclusive
+            no Claude (sem Enter). Termine a fala com <b>“enviar”</b> pra mandar com Enter.
           </p>
 
           <div class="engines">
@@ -140,7 +229,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
                   spellcheck="false"
                   :placeholder="hasKey ? 'Salva. Digite outra pra trocar' : 'gsk_… ou sk-…'"
                 />
-                <button v-if="hasKey" type="button" class="secondary" title="Apaga a chave salva" @click="save('')">Apagar</button>
+                <button v-if="hasKey" type="button" class="secondary" title="Apaga a chave salva" @click="save({ api: '' })">Apagar</button>
               </div>
               <small>Fica em settings.json, legível só pelo seu usuário. Não aparece mais aqui depois de salva.</small>
             </label>
@@ -164,6 +253,109 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
             <input v-model.trim="voice.language" placeholder="pt" spellcheck="false" class="short" />
             <small>Código ISO; vazio deixa o serviço detectar.</small>
           </label>
+
+          <label class="check">
+            <input v-model="voice.auto_stop" type="checkbox" />
+            <span>
+              <b>Parar sozinho quando eu parar de falar</b>
+              <small>Transcreve depois de 1,5 s de silêncio; sem fala em 8 s, descarta. Desligado, clique de novo pra parar.</small>
+            </span>
+          </label>
+        </section>
+
+        <section>
+          <h2>Leitura em voz alta</h2>
+          <p class="hint">
+            Lê a resposta do Claude quando ele termina, sem blocos de código, tabelas e links. Respostas longas são lidas só
+            no começo. Enquanto fala, o microfone da barra vira o botão de parar.
+          </p>
+
+          <label class="field">
+            <span>Ler a resposta</span>
+            <select v-model="speech.mode">
+              <option value="off">Nunca</option>
+              <option value="dictated">Quando a pergunta foi ditada</option>
+              <option value="always">Sempre que o Claude da aba ativa terminar</option>
+            </select>
+          </label>
+
+          <div class="engines three">
+            <label :class="{ on: speechSource === 'dictation' }">
+              <input v-model="speechSource" type="radio" value="dictation" />
+              <span><b>Mesma API do ditado</b><small>Usa a URL e a chave de cima; só o modelo e a voz são daqui.</small></span>
+            </label>
+            <label :class="{ on: speechSource === 'other' }">
+              <input v-model="speechSource" type="radio" value="other" />
+              <span><b>Outra API</b><small>URL e chave próprias (ex.: ditado no Groq e voz na OpenAI).</small></span>
+            </label>
+            <label :class="{ on: speechSource === 'extension', disabled: !ttsExtensions.length }">
+              <input v-model="speechSource" type="radio" value="extension" :disabled="!ttsExtensions.length" />
+              <span>
+                <b>Voz local (extensão)</b>
+                <small v-if="ttsExtensions.length">Gerada na máquina, sem internet nem cota; usa CPU a cada resposta.</small>
+                <small v-else>Instale “Voz local (Kokoro)” em Extensões, aqui embaixo.</small>
+              </span>
+            </label>
+          </div>
+
+          <label v-if="speech.engine === 'extension' && ttsExtensions.length > 1" class="field">
+            <span>Extensão</span>
+            <select v-model="speech.extension">
+              <option v-for="[id, name] in ttsExtensions" :key="id" :value="id">{{ name }}</option>
+            </select>
+          </label>
+          <p v-if="speech.engine === 'extension'" class="hint">
+            Voz, idioma, velocidade e núcleos da CPU ficam na configuração da extensão, em Extensões.
+          </p>
+
+          <label v-if="speech.engine === 'api'" class="field">
+            <span>Serviço</span>
+            <select :value="speechPreset" @change="applySpeechPreset(($event.target as HTMLSelectElement).value)">
+              <option v-for="p in SPEECH_PRESETS" :key="p.id" :value="p.id">{{ p.label }}</option>
+              <option value="custom" disabled>Outro (modelo abaixo)</option>
+            </select>
+            <small v-if="speech.same_api">O serviço precisa ser o mesmo do ditado: a URL e a chave vêm de lá.</small>
+            <small v-else-if="speechPreset === 'groq'">Os modelos de voz do Groq falam só inglês (e árabe). Pra português, use a OpenAI.</small>
+          </label>
+
+          <template v-if="speech.engine === 'api' && !speech.same_api">
+            <label class="field">
+              <span>URL da API</span>
+              <input v-model.trim="speech.api_url" placeholder="https://api.openai.com/v1" spellcheck="false" />
+            </label>
+            <label class="field">
+              <span>Chave da API</span>
+              <div class="key">
+                <input
+                  v-model="newSpeechKey"
+                  type="password"
+                  autocomplete="off"
+                  spellcheck="false"
+                  :placeholder="hasSpeechKey ? 'Salva. Digite outra pra trocar' : 'sk-… ou gsk_…'"
+                />
+                <button v-if="hasSpeechKey" type="button" class="secondary" title="Apaga a chave salva" @click="save({ speech: '' })">
+                  Apagar
+                </button>
+              </div>
+            </label>
+          </template>
+
+          <template v-if="speech.engine === 'api'">
+            <label class="field">
+              <span>Modelo</span>
+              <input v-model.trim="speech.api_model" placeholder="gpt-4o-mini-tts" spellcheck="false" />
+            </label>
+            <label class="field">
+              <span>Voz</span>
+              <input v-model.trim="speech.voice" placeholder="alloy" spellcheck="false" />
+              <small>Nome da voz do serviço (Groq: troy, hannah, austin…; OpenAI: alloy, nova, shimmer…).</small>
+            </label>
+          </template>
+          <div class="test">
+            <button type="button" class="secondary" :disabled="testing || saving" @click="testSpeech">
+              {{ testing ? "Falando…" : "Testar voz" }}
+            </button>
+          </div>
         </section>
 
         <section>
@@ -281,6 +473,31 @@ code {
   border: 1px solid var(--border);
   border-radius: 8px;
   cursor: pointer;
+}
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+.check input {
+  margin-top: 3px;
+}
+.check span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.engines.three {
+  grid-template-columns: repeat(3, 1fr);
+}
+.engines label.disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.test {
+  display: flex;
+  justify-content: flex-end;
 }
 .engines label.on {
   border-color: var(--accent);
