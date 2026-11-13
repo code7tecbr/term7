@@ -1,6 +1,7 @@
 # Uso:
 #   docker compose run --rm build   -> gera o .deb em ./dist-deb/ (apaga os de builds antigos:
 #                                      o volume do target guardava .deb de outras versões)
+#   docker compose run --rm build-test -> .deb de teste (term7-dev) em ./dist-test/; abra com scripts/run-test.sh
 #   docker compose run --rm dev     -> abre o app na sua tela (hot reload)
 
 x-base: &base
@@ -25,6 +26,15 @@ services:
       bash -c "rm -f src-tauri/target/release/bundle/deb/*.deb dist-deb/*.deb
       && npm ci && npx tauri build --bundles deb
       && mkdir -p dist-deb && cp src-tauri/target/release/bundle/deb/*.deb dist-deb/"
+
+  # Build de teste: outro nome e identificador (configurações, sessão e janela à parte),
+  # pra rodar ao lado da release instalada. Abra com scripts/run-test.sh.
+  build-test:
+    <<: *base
+    command: >
+      bash -c "rm -f src-tauri/target/release/bundle/deb/*.deb dist-test/*.deb
+      && npm ci && npx tauri build --bundles deb --config src-tauri/tauri.test.conf.json
+      && mkdir -p dist-test && cp src-tauri/target/release/bundle/deb/*.deb dist-test/"
 
   dev:
     <<: *base

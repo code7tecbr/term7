@@ -13,7 +13,7 @@ const props = defineProps<{
   mcp: { servers: { status: string }[] | null; loading: boolean } | null;
   mcpOpen: boolean;
   /** Ditado: parado, gravando (com os segundos) ou esperando a transcrição. */
-  voice: "idle" | "recording" | "transcribing";
+  voice: "idle" | "recording" | "transcribing" | "speaking";
   voiceSecs: number;
   anon: boolean;
   /** Uso da assinatura do Claude da aba; null = sem Claude ou ainda lendo. */
@@ -140,12 +140,21 @@ const mcpCounts = computed(() => {
         class="btn icon mic"
         :class="voice"
         :disabled="voice === 'transcribing'"
-        :title="voice === 'recording' ? 'Parar e transcrever' : voice === 'transcribing' ? 'Transcrevendo…' : 'Ditar: clique, fale e clique de novo'"
+        :title="
+          voice === 'recording'
+            ? 'Parar e transcrever'
+            : voice === 'transcribing'
+              ? 'Transcrevendo…'
+              : voice === 'speaking'
+                ? 'Lendo a resposta do Claude: clique pra parar'
+                : 'Ditar: clique, fale e clique de novo (termine com “enviar” pra mandar)'
+        "
         @click="$emit('voice')"
       >
         <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5.5" y="1.75" width="5" height="8" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.3" /><path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2.25" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" /></svg>
         <span v-if="voice === 'recording'">{{ clock }}</span>
         <span v-else-if="voice === 'transcribing'">Transcrevendo…</span>
+        <span v-else-if="voice === 'speaking'">Parar voz</span>
       </button>
       <button
         class="btn icon anon-safe"
@@ -259,6 +268,10 @@ const mcpCounts = computed(() => {
   animation: pulse 1.2s ease-in-out infinite;
 }
 .mic.transcribing {
+  color: var(--accent);
+}
+.mic.speaking {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--accent);
 }
 .anon-on {

@@ -22,7 +22,8 @@ export interface Extension {
   name: string;
   description: string;
   link: string | null;
-  kind: "service" | "mcp";
+  /** service: serviço do systemd; mcp: MCP nas contas do Claude; tts: voz local da leitura em voz alta. */
+  kind: "service" | "mcp" | "tts";
   config: ConfigField[];
   /** Valores salvos, sem os secretos. */
   values: Record<string, string>;
@@ -47,10 +48,11 @@ export function formValues(ext: Extension): Record<string, string> {
 }
 
 /** O que vai pro backend: secreto vazio e já salvo = mantém (null), a não ser que peçam pra apagar. */
-export function configToSend(ext: Extension, form: Record<string, string>, clear: Set<string> = new Set()) {
+export function configToSend(ext: Extension, form: Record<string, string | number>, clear: Set<string> = new Set()) {
   return Object.fromEntries(
     ext.config.map((f) => {
-      const v = form[f.key] ?? "";
+      // O v-model de <input type="number"> devolve número; o backend guarda tudo como texto.
+      const v = String(form[f.key] ?? "");
       if (f.type === "secret" && !v) return [f.key, clear.has(f.key) ? "" : null];
       return [f.key, v];
     }),

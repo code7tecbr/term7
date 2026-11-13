@@ -49,6 +49,8 @@
           "/usr/share/doc/term7/THIRD_PARTY_LICENSES.md": "THIRD_PARTY_LICENSES.md",
           "/usr/share/term7/extensions/mcp/extension.json": "../extensions/mcp/extension.json",
           "/usr/share/term7/extensions/mcp/term7-mcp": "../extensions/mcp/term7-mcp",
+          "/usr/share/term7/extensions/kokoro/extension.json": "../extensions/kokoro/extension.json",
+          "/usr/share/term7/extensions/kokoro/term7-kokoro": "../extensions/kokoro/term7-kokoro",
           "/usr/share/term7/extensions/statusbot/extension.json": "../extensions/statusbot/extension.json",
           "/usr/share/term7/extensions/statusbot/term7-statusbot": "../extensions/statusbot/term7-statusbot"
         }

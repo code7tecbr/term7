@@ -56,7 +56,11 @@ const install = (ext: Extension) =>
   run(
     ext,
     () => installExtension(ext.id, configToSend(ext, forms[ext.id], clearing[ext.id]), accounts[ext.id]),
-    ext.kind === "mcp" ? "Pronto. Reinicie o Claude nas abas (/exit) pra ele ver o MCP." : "Pronto. Em até um minuto aparece na barra de status.",
+    ext.kind === "mcp"
+      ? "Pronto. Reinicie o Claude nas abas (/exit) pra ele ver o MCP."
+      : ext.kind === "tts"
+        ? "Pronto. Escolha “Voz local” em Leitura em voz alta, aqui em cima."
+        : "Pronto. Em até um minuto aparece na barra de status.",
   );
 
 const uninstall = (ext: Extension) => run(ext, () => uninstallExtension(ext.id), "Removida.");
@@ -64,6 +68,7 @@ const uninstall = (ext: Extension) => run(ext, () => uninstallExtension(ext.id),
 function stateLabel(ext: Extension) {
   if (!ext.installed) return "não instalada";
   if (ext.kind === "service") return ext.running ? "rodando" : "instalada, parada";
+  if (ext.kind === "tts") return "instalada";
   const n = ext.accounts.filter((a) => a.installed).length;
   return `instalada em ${n} ${n === 1 ? "conta" : "contas"}`;
 }
@@ -82,7 +87,7 @@ onMounted(load);
     <p v-else-if="exts && !exts.length" class="hint">Este term7 veio sem extensões (build sem a pasta extensions/).</p>
     <div v-for="ext in exts ?? []" :key="ext.id" class="ext" :class="{ open: open === ext.id }">
       <button type="button" class="head" @click="open = open === ext.id ? null : ext.id">
-        <span class="dot" :class="{ on: ext.installed && (ext.kind === 'mcp' || ext.running), off: ext.installed && ext.kind === 'service' && !ext.running }" />
+        <span class="dot" :class="{ on: ext.installed && (ext.kind !== 'service' || ext.running), off: ext.installed && ext.kind === 'service' && !ext.running }" />
         <span class="name">{{ ext.name }}</span>
         <span class="state">{{ stateLabel(ext) }}</span>
         <svg class="chev" viewBox="0 0 16 16" width="12" height="12"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
@@ -129,7 +134,7 @@ onMounted(load);
           <span v-if="status[ext.id]" class="status" :class="{ error: !status[ext.id].ok }">{{ status[ext.id].text }}</span>
           <button v-if="ext.installed" type="button" class="secondary" :disabled="busy === ext.id" @click="uninstall(ext)">Remover</button>
           <button type="button" class="primary" :disabled="busy === ext.id" @click="install(ext)">
-            {{ busy === ext.id ? "Aguarde…" : ext.installed ? "Salvar" : "Instalar" }}
+            {{ busy === ext.id ? (ext.kind === "tts" && !ext.installed ? "Baixando (pode levar minutos)…" : "Aguarde…") : ext.installed ? "Salvar" : "Instalar" }}
           </button>
         </div>
       </div>

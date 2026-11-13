@@ -14,12 +14,14 @@ mod suggest;
 mod tasks;
 mod update;
 mod usage;
+mod speech;
 mod voice;
 
 pub fn run() {
     tauri::Builder::default()
         .manage(pty::PtyState::default())
         .manage(voice::VoiceState::default())
+        .manage(speech::SpeechState::default())
         .manage(api::ApiState::default())
         .setup(|app| {
             if settings::load(app.handle()).api_enabled {
@@ -66,9 +68,13 @@ pub fn run() {
             extensions::extensions_list,
             extensions::extension_install,
             extensions::extension_uninstall,
+            extensions::extensions_tts,
             voice::voice_start,
             voice::voice_stop,
             voice::voice_cancel,
+            speech::speak_text,
+            speech::speak_claude_reply,
+            speech::speak_stop,
             session::session_load,
             session::session_save,
             update::update_check,

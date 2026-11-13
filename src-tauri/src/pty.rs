@@ -51,6 +51,21 @@ fn size(cols: u16, rows: u16) -> PtySize {
     PtySize { rows, cols, pixel_width: 0, pixel_height: 0 }
 }
 
+/// Marcas de uma sessão do Claude Code em andamento. `CLAUDE_CONFIG_DIR` e as preferências
+/// do usuário ficam: são dele, não da sessão.
+const INHERITED_CLAUDE_VARS: [&str; 10] = [
+    "CLAUDECODE",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_EXECPATH",
+    "CLAUDE_CODE_MESSAGING_SOCKET",
+    "CLAUDE_CODE_MESSAGING_TOKEN",
+    "CLAUDE_CODE_SESSION_ATTENDED",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_EFFORT",
+    "CLAUDE_PID",
+];
+
 #[tauri::command]
 pub fn pty_spawn(
     app: AppHandle,
@@ -71,6 +86,11 @@ pub fn pty_spawn(
     // o que importa quando o app é aberto pelo menu e não por outro terminal.
     if cfg!(unix) && ["zsh", "bash", "fish"].iter().any(|s| shell.ends_with(s)) {
         cmd.arg("-l");
+    }
+    // Aberto de dentro de um Claude Code (ex.: `! scripts/run-test.sh`), o app herda as marcas
+    // da sessão dele; um Claude nas abas se acharia "filho" e não salvaria o histórico.
+    for var in INHERITED_CLAUDE_VARS {
+        cmd.env_remove(var);
     }
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");

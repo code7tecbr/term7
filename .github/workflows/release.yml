@@ -101,6 +101,7 @@ jobs:
         run: |
           python3 -m unittest discover -s extensions/mcp
           python3 -m unittest discover -s extensions/statusbot
+          python3 -m unittest discover -s extensions/kokoro
       - run: npm run build
       - run: cargo test --locked
         working-directory: src-tauri

@@ -74,6 +74,24 @@ statusbot every minute. While term7 is closed, it just tries again on the next r
 - Remove: `systemctl --user disable --now term7-statusbot`, then delete `~/.local/bin/term7-statusbot`,
   `~/.config/term7/statusbot.env` and `~/.config/systemd/user/term7-statusbot.service`.
 
+## Local voice (Kokoro)
+
+Reads Claude's replies aloud with [Kokoro-82M](https://github.com/thewh1teagle/kokoro-onnx), generated on your own
+machine: no internet, no quota, and the text never leaves the computer. Unlike the others, this extension doesn't use
+the API: term7 itself calls it for each chunk of the reply.
+
+Install it from the screen (Settings → Extensions → Local voice). Installing creates a venv in
+`~/.local/share/term7/kokoro` with `kokoro-onnx` and downloads the int8 model (~120 MB). Then, in Settings → Read
+aloud, pick “Local voice (extension)”.
+
+- **Voice and language:** `pm_alex` (default), `pm_santa` and `pf_dora` speak Brazilian Portuguese; with `en-us`,
+  the English voices (`af_heart`, `am_michael`…).
+- **Speed:** 1.0 is normal; 0.8 speaks slower.
+- **CPU cores:** how many to use while generating (default 4). Each reply read aloud keeps the CPU busy for a few
+  seconds.
+- Try it outside term7: `echo "Hello" | python3 /usr/share/term7/extensions/kokoro/term7-kokoro /tmp/hello.wav`
+- Remove: from the screen, or delete `~/.local/share/term7/kokoro` and `~/.config/term7/kokoro.env`.
+
 ## API protocol
 
 A connection can make several requests. Each request is one JSON line, and so is each reply:
@@ -134,4 +152,5 @@ Each folder has an `extension.json`, which the screen uses to build the form and
 ```sh
 python3 -m unittest discover -s extensions/mcp
 python3 -m unittest discover -s extensions/statusbot
+python3 -m unittest discover -s extensions/kokoro
 ```

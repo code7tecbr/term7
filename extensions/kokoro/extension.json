@@ -1,0 +1,38 @@
+{
+  "id": "kokoro",
+  "name": "Voz local (Kokoro)",
+  "description": "Lê as respostas do Claude com uma voz gerada na própria máquina (Kokoro-82M): sem internet, sem cota. Instalar baixa uns 120 MB. Depois, escolha “Kokoro (local)” em Configurações → Leitura em voz alta.",
+  "link": "https://github.com/thewh1teagle/kokoro-onnx",
+  "kind": "tts",
+  "entry": "term7-kokoro",
+  "config": [
+    {
+      "key": "KOKORO_VOICE",
+      "label": "Voz",
+      "type": "text",
+      "default": "pm_alex",
+      "help": "pt-BR: pm_alex, pm_santa (masculinas), pf_dora (feminina). Inglês: af_heart, am_michael…"
+    },
+    {
+      "key": "KOKORO_LANG",
+      "label": "Idioma da pronúncia",
+      "type": "text",
+      "default": "pt-br",
+      "help": "pt-br ou en-us. Precisa combinar com a voz."
+    },
+    {
+      "key": "KOKORO_SPEED",
+      "label": "Velocidade",
+      "type": "text",
+      "default": "1.0",
+      "help": "1.0 é o normal; 0.8 fala mais devagar, 1.2 mais rápido."
+    },
+    {
+      "key": "KOKORO_THREADS",
+      "label": "Núcleos da CPU",
+      "type": "number",
+      "default": "4",
+      "help": "Quantos núcleos usar pra gerar a voz. Menos pesa menos na máquina, mas a fala demora mais pra começar."
+    }
+  ]
+}
