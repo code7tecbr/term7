@@ -1,18 +1,18 @@
 //! Saída de voz: lê em voz alta a última resposta do Claude da aba (ou um texto
 //! de teste) com a API `/audio/speech` no formato da OpenAI (Groq, OpenAI...) ou
 //! com uma extensão de voz local (tipo `tts`, como a do Kokoro).
-//! O áudio vem em trechos curtos: o próximo é gerado enquanto o atual toca.
+//! O áudio vem em trechos: os seguintes são gerados enquanto o atual toca.
 
 use std::{
-    io::Write,
+    io::{BufRead, BufReader, Write},
     os::unix::fs::OpenOptionsExt,
     path::PathBuf,
-    process::{Command, Stdio},
+    process::{Child, ChildStdin, ChildStdout, Command, Stdio},
     sync::{
         atomic::{AtomicU64, Ordering},
-        Arc, Mutex,
+        mpsc, Mutex,
     },
-    thread::{self, JoinHandle},
+    thread,
     time::Duration,
 };
 
@@ -29,9 +29,12 @@ const CHUNK_CHARS: usize = 200;
 /// Nada toca até o primeiro trecho chegar inteiro: curto, a fala começa logo e
 /// os seguintes são gerados enquanto ele toca.
 const FIRST_CHUNK_CHARS: usize = 80;
+/// Voz local: os trechos crescem aos poucos. Um gerado enquanto o anterior toca
+/// precisa ficar pronto antes de ele acabar; crescendo 25% por trecho, isso vale
+/// mesmo com a geração quase em tempo real (1 núcleo).
+const LOCAL_CHUNK_CHARS: &[usize] = &[80, 100, 125, 156, 195, 244, 305, 381, 476, 600];
 /// Pela API, resposta longa vira custo e cota (o Groq gratuito dá 100 pedidos por
-/// dia e 1.200 tokens por minuto): lê só o começo. A voz local lê tudo: só gera um
-/// trecho à frente, então parar no meio não desperdiça nada.
+/// dia e 1.200 tokens por minuto): lê só o começo. A voz local lê tudo.
 const API_MAX_CHARS: usize = 600;
 /// Tentativas por trecho quando a API pede pra esperar (429) ou falha do lado dela (5xx).
 const ATTEMPTS: usize = 3;
@@ -44,6 +47,8 @@ pub struct SpeechState {
     generation: AtomicU64,
     /// pid do pw-play/aplay tocando agora.
     player: Mutex<Option<u32>>,
+    /// pid da voz local gerando os trechos da leitura atual.
+    generator: Mutex<Option<u32>>,
 }
 
 /// "- item", "* item", "1. item", "2) item" -> "item".
@@ -134,29 +139,11 @@ pub(crate) fn speakable(markdown: &str) -> String {
     sentences.join(" ")
 }
 
-/// Quebra uma frase em pedaços de até `max` caracteres, entre palavras.
-fn fit(sentence: &str, max: usize) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut cur = String::new();
-    for word in sentence.split_whitespace() {
-        let word: String = word.chars().take(max).collect();
-        if !cur.is_empty() && cur.chars().count() + 1 + word.chars().count() > max {
-            out.push(std::mem::take(&mut cur));
-        }
-        if !cur.is_empty() {
-            cur.push(' ');
-        }
-        cur.push_str(&word);
-    }
-    if !cur.is_empty() {
-        out.push(cur);
-    }
-    out
-}
-
-/// Trechos de até `max` caracteres (o primeiro, até `first`), juntando frases
-/// inteiras; para no fim da frase que passaria de `limit` no total.
-pub(crate) fn chunks(text: &str, first: usize, max: usize, limit: usize) -> Vec<String> {
+/// Trechos que juntam frases inteiras; o trecho `i` tem até `caps[i]` caracteres
+/// (o último valor vale pros seguintes). Frase que não cabe é cortada entre
+/// palavras. Para no fim da frase que passaria de `limit` no total.
+pub(crate) fn chunks(text: &str, caps: &[usize], limit: usize) -> Vec<String> {
+    let cap = |i: usize| caps[i.min(caps.len() - 1)];
     let mut sentences: Vec<String> = Vec::new();
     let mut cur = String::new();
     for word in text.split_whitespace() {
@@ -180,23 +167,27 @@ pub(crate) fn chunks(text: &str, first: usize, max: usize, limit: usize) -> Vec<
             break;
         }
         total += len;
-        for piece in fit(&sentence, max) {
-            let n = piece.chars().count();
-            let cap = if out.len() == 1 { first } else { max };
-            match out.last_mut() {
-                Some(last) if last.chars().count() + 1 + n <= cap => {
-                    last.push(' ');
-                    last.push_str(&piece);
-                }
-                _ => out.push(piece),
-            }
+        let room = |out: &Vec<String>| out.last().map_or(0, |last| cap(out.len() - 1).saturating_sub(last.chars().count() + 1));
+        if len <= room(&out) {
+            let last = out.last_mut().unwrap();
+            last.push(' ');
+            last.push_str(&sentence);
+            continue;
         }
-    }
-    // Uma frase só já passou do primeiro trecho: corta entre palavras.
-    if out.first().is_some_and(|head| head.chars().count() > first) {
-        let pieces = fit(&out[0], first);
-        out[0] = pieces[0].clone();
-        out.insert(1, pieces[1..].join(" "));
+        // Não cabe no trecho atual: começa outro, cortando entre palavras se precisar.
+        out.push(String::new());
+        for word in sentence.split_whitespace() {
+            let word: String = word.chars().take(cap(out.len() - 1)).collect();
+            let last = out.last().unwrap();
+            if !last.is_empty() && word.chars().count() > room(&out) {
+                out.push(String::new());
+            }
+            let last = out.last_mut().unwrap();
+            if !last.is_empty() {
+                last.push(' ');
+            }
+            last.push_str(&word);
+        }
     }
     out
 }
@@ -239,22 +230,53 @@ fn engine(s: &settings::Settings) -> Result<Engine, String> {
     }
 }
 
-fn synthesize_local(python: &PathBuf, script: &PathBuf, text: &str, out: &PathBuf) -> Result<(), String> {
-    let mut child = Command::new(python)
-        .arg(script)
-        .arg(out)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("não deu pra rodar a voz local: {e}"))?;
-    child.stdin.take().unwrap().write_all(text.as_bytes()).map_err(|e| e.to_string())?;
-    let res = child.wait_with_output().map_err(|e| e.to_string())?;
-    if !res.status.success() {
-        let _ = std::fs::remove_file(out);
-        return Err(format!("a voz local falhou: {}", voice::last_line(&res.stderr)));
+/// Voz local aberta durante uma leitura: carrega o modelo uma vez e gera os
+/// trechos em sequência (`--serve`: uma linha JSON por trecho, responde "ok").
+struct LocalVoice {
+    child: Child,
+    stdin: ChildStdin,
+    stdout: BufReader<ChildStdout>,
+}
+
+impl LocalVoice {
+    fn start(state: &SpeechState, python: &PathBuf, script: &PathBuf) -> Result<Self, String> {
+        let mut child = Command::new(python)
+            .arg(script)
+            .arg("--serve")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| format!("não deu pra rodar a voz local: {e}"))?;
+        *state.generator.lock().unwrap() = Some(child.id());
+        let stdin = child.stdin.take().unwrap();
+        let stdout = BufReader::new(child.stdout.take().unwrap());
+        Ok(Self { child, stdin, stdout })
     }
-    Ok(())
+
+    fn synthesize(&mut self, text: &str, out: &PathBuf) -> Result<(), String> {
+        let request = serde_json::json!({ "text": text, "out": out }).to_string();
+        writeln!(self.stdin, "{request}").and_then(|_| self.stdin.flush()).map_err(|_| "a voz local parou".to_string())?;
+        let mut line = String::new();
+        self.stdout.read_line(&mut line).map_err(|e| e.to_string())?;
+        match line.trim() {
+            "ok" => Ok(()),
+            "" => Err("a voz local parou (a extensão está atualizada?)".into()),
+            err => {
+                let _ = std::fs::remove_file(out);
+                Err(format!("a voz local falhou: {}", err.trim_start_matches("erro: ")))
+            }
+        }
+    }
+
+    fn close(mut self, state: &SpeechState) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        let mut generator = state.generator.lock().unwrap();
+        if *generator == Some(self.child.id()) {
+            *generator = None;
+        }
+    }
 }
 
 fn tmp_path(name: &str) -> PathBuf {
@@ -389,17 +411,41 @@ fn play(state: &SpeechState, wav: &PathBuf) -> Result<(), String> {
 
 fn stop_playing(state: &SpeechState) {
     state.generation.fetch_add(1, Ordering::SeqCst);
-    if let Some(pid) = *state.player.lock().unwrap() {
+    // A voz local também: parada no meio de um trecho, solta a CPU na hora.
+    for pid in [*state.player.lock().unwrap(), *state.generator.lock().unwrap()].into_iter().flatten() {
         let _ = Command::new("kill").arg(pid.to_string()).status();
     }
 }
 
-type Job = JoinHandle<Result<PathBuf, String>>;
-
-/// Trecho já pedido que não vai mais tocar: espera e apaga o arquivo.
-fn discard(job: Option<Job>) {
-    if let Some(Ok(Ok(path))) = job.map(JoinHandle::join) {
-        let _ = std::fs::remove_file(path);
+/// Gera os trechos em ordem, sem esperar o tocador: vai adiantando enquanto ele
+/// toca. Para quando a fala é interrompida ou o tocador desiste (canal fechado).
+fn produce(app: &AppHandle, generation: u64, engine: Engine, parts: Vec<String>, tx: mpsc::Sender<Result<PathBuf, String>>) {
+    let state = app.state::<SpeechState>();
+    let current = || state.generation.load(Ordering::SeqCst) == generation;
+    let mut local: Option<LocalVoice> = None;
+    for (i, text) in parts.iter().enumerate() {
+        if !current() {
+            break;
+        }
+        let path = tmp_path(&format!("{generation}-{i}.wav"));
+        let result = match &engine {
+            Engine::Api(cfg) => synthesize_retrying(app, generation, cfg, text, &path),
+            Engine::Local { python, script } => match &mut local {
+                Some(voice) => voice.synthesize(text, &path),
+                None => LocalVoice::start(&state, python, script).and_then(|voice| local.insert(voice).synthesize(text, &path)),
+            },
+        };
+        let failed = result.is_err();
+        if tx.send(result.map(|_| path.clone())).is_err() {
+            let _ = std::fs::remove_file(&path);
+            break;
+        }
+        if failed {
+            break;
+        }
+    }
+    if let Some(voice) = local {
+        voice.close(&state);
     }
 }
 
@@ -411,47 +457,28 @@ fn speak(app: &AppHandle, text: &str) -> Result<(), String> {
     let generation = state.generation.load(Ordering::SeqCst);
     let current = || state.generation.load(Ordering::SeqCst) == generation;
 
-    let engine = Arc::new(engine(&settings::load(app))?);
-    let limit = match &*engine {
-        Engine::Api(_) => API_MAX_CHARS,
-        Engine::Local { .. } => usize::MAX,
+    let engine = engine(&settings::load(app))?;
+    let parts = match engine {
+        Engine::Api(_) => chunks(text, &[FIRST_CHUNK_CHARS, CHUNK_CHARS], API_MAX_CHARS),
+        Engine::Local { .. } => chunks(text, LOCAL_CHUNK_CHARS, usize::MAX),
     };
-    let parts = chunks(text, FIRST_CHUNK_CHARS, CHUNK_CHARS, limit);
-    let request = |i: usize| -> Job {
-        let (app, engine, text, path) = (app.clone(), engine.clone(), parts[i].clone(), tmp_path(&format!("{generation}-{i}.wav")));
-        thread::spawn(move || {
-            match &*engine {
-                Engine::Api(cfg) => synthesize_retrying(&app, generation, cfg, &text, &path),
-                Engine::Local { python, script } => synthesize_local(python, script, &text, &path),
-            }
-            .map(|_| path)
-        })
-    };
+    let (tx, rx) = mpsc::channel();
+    let app2 = app.clone();
+    thread::spawn(move || produce(&app2, generation, engine, parts, tx));
 
-    let mut next = (!parts.is_empty()).then(|| request(0));
-    let mut i = 0;
-    while let Some(job) = next.take() {
-        let wav = match job.join() {
-            Ok(Ok(wav)) => wav,
-            // Interrompida no meio: não é erro pra mostrar.
-            _ if !current() => break,
-            Ok(Err(e)) => return Err(e),
-            Err(_) => return Err("falhou ao gerar o áudio".into()),
-        };
-        i += 1;
+    for item in rx {
+        // Interrompida no meio: não é erro pra mostrar. Sair fecha o canal e o
+        // gerador apaga o que ainda produzir.
         if !current() {
-            let _ = std::fs::remove_file(&wav);
+            if let Ok(wav) = item {
+                let _ = std::fs::remove_file(wav);
+            }
             break;
         }
-        if i < parts.len() {
-            next = Some(request(i));
-        }
+        let wav = item?;
         let played = play(&state, &wav);
         let _ = std::fs::remove_file(&wav);
-        if played.is_err() || !current() {
-            discard(next.take());
-            played?;
-        }
+        played?;
     }
     Ok(())
 }
@@ -577,22 +604,25 @@ mod tests {
     #[test]
     fn divide_em_trechos_por_frase() {
         let text = "Primeira frase. Segunda frase! Terceira?";
-        assert_eq!(chunks(text, 20, 20, 1000), ["Primeira frase.", "Segunda frase!", "Terceira?"]);
-        assert_eq!(chunks(text, 35, 35, 1000), ["Primeira frase. Segunda frase!", "Terceira?"]);
+        assert_eq!(chunks(text, &[20], 1000), ["Primeira frase.", "Segunda frase!", "Terceira?"]);
+        assert_eq!(chunks(text, &[35], 1000), ["Primeira frase. Segunda frase!", "Terceira?"]);
         // Frase maior que o trecho quebra entre palavras.
-        assert_eq!(chunks("um dois três quatro", 9, 9, 1000), ["um dois", "três", "quatro"]);
+        assert_eq!(chunks("um dois três quatro", &[9], 1000), ["um dois", "três", "quatro"]);
         // Passou do limite: para no fim da frase anterior.
-        assert_eq!(chunks(text, 200, 200, 32), ["Primeira frase. Segunda frase!"]);
-        assert!(chunks("   ", 80, 200, 1000).is_empty());
+        assert_eq!(chunks(text, &[200], 32), ["Primeira frase. Segunda frase!"]);
+        assert!(chunks("   ", &[80, 200], 1000).is_empty());
     }
 
     #[test]
     fn primeiro_trecho_e_curto() {
         // Frases curtas: o primeiro trecho junta só o que cabe nele.
         let text = "Primeira frase. Segunda frase! Terceira?";
-        assert_eq!(chunks(text, 16, 200, 1000), ["Primeira frase.", "Segunda frase! Terceira?"]);
+        assert_eq!(chunks(text, &[16, 200], 1000), ["Primeira frase.", "Segunda frase! Terceira?"]);
         // Primeira frase longa: corta entre palavras e o resto vira o segundo trecho.
-        assert_eq!(chunks("um dois três quatro. Fim.", 8, 200, 1000), ["um dois", "três quatro.", "Fim."]);
+        assert_eq!(chunks("um dois três quatro. Fim.", &[8, 200], 1000), ["um dois", "três quatro. Fim."]);
+        // Voz local: trechos crescem aos poucos (cada um fica pronto antes do anterior acabar de tocar).
+        let text = "Um dois três. Quatro cinco seis. Sete oito nove. Dez onze doze. Treze.";
+        assert_eq!(chunks(text, &[14, 18, 34], 1000), ["Um dois três.", "Quatro cinco seis.", "Sete oito nove. Dez onze doze.", "Treze."]);
     }
 
     #[test]

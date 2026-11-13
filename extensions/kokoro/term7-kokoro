@@ -4,7 +4,10 @@
 Gera a fala na própria máquina com o Kokoro-82M (int8, via kokoro-onnx): nada sai
 da máquina e não tem cota. O term7 chama uma vez por trecho:
 
-  term7-kokoro OUT.wav   < texto     gera o .wav do texto
+  term7-kokoro --serve               fica aberto durante a leitura: carrega o modelo
+                                     uma vez; cada linha {"text", "out"} no stdin
+                                     vira um .wav e responde "ok" (ou "erro: ...")
+  term7-kokoro OUT.wav   < texto     gera um .wav só (pra testar na mão)
   term7-kokoro --setup               cria o ambiente e baixa o modelo (~120 MB)
 
 As dependências (kokoro-onnx, onnxruntime) ficam num venv próprio em
@@ -18,6 +21,7 @@ Configuração ($XDG_CONFIG_HOME/term7/kokoro.env, gravada pela tela de extensõ
   KOKORO_THREADS  núcleos usados pra gerar (padrão 4)
 """
 
+import json
 import os
 import subprocess
 import sys
@@ -105,9 +109,8 @@ def setup():
     print("Pronto.")
 
 
-def speak(out_path, text):
+def load_voice():
     import onnxruntime as ort
-    import soundfile as sf
     from kokoro_onnx import Kokoro
 
     cfg = load_settings()
@@ -118,24 +121,46 @@ def speak(out_path, text):
     opts.inter_op_num_threads = 1
     session = ort.InferenceSession(os.path.join(root, MODEL_FILES[0]), opts, providers=["CPUExecutionProvider"])
     kokoro = Kokoro.from_session(session, os.path.join(root, MODEL_FILES[1]))
-    samples, rate = kokoro.create(text, voice=cfg["voice"], speed=cfg["speed"], lang=cfg["lang"])
-    sf.write(out_path, samples, rate, subtype="PCM_16")
+
+    def speak(out_path, text):
+        import soundfile as sf
+
+        samples, rate = kokoro.create(text, voice=cfg["voice"], speed=cfg["speed"], lang=cfg["lang"])
+        sf.write(out_path, samples, rate, subtype="PCM_16")
+
+    return speak
+
+
+def serve(speak, lines, reply):
+    """Um pedido por linha; um erro num trecho não derruba os seguintes."""
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            req = json.loads(line)
+            speak(req["out"], req["text"])
+            reply("ok")
+        except Exception as e:  # noqa: BLE001 - qualquer falha vira resposta, não silêncio
+            reply("erro: " + " ".join(str(e).split()))
 
 
 def main(argv):
     if argv[1:] == ["--setup"]:
         return setup()
-    if len(argv) != 2 or argv[1].startswith("-"):
-        sys.exit("Uso: term7-kokoro OUT.wav < texto   |   term7-kokoro --setup")
+    serving = argv[1:] == ["--serve"]
+    if not serving and (len(argv) != 2 or argv[1].startswith("-")):
+        sys.exit("Uso: term7-kokoro --serve   |   term7-kokoro OUT.wav < texto   |   term7-kokoro --setup")
     if not os.path.exists(os.path.join(data_dir(), "ready")):
         sys.exit("a extensão Kokoro não terminou de instalar (Configurações → Extensões)")
     # Rodando com o python3 do sistema: passa pro do venv, onde estão as dependências.
     if os.path.realpath(sys.prefix) != os.path.realpath(os.path.join(data_dir(), "venv")):
         os.execv(venv_python(), [venv_python(), os.path.abspath(__file__), *argv[1:]])
+    if serving:
+        return serve(load_voice(), sys.stdin, lambda msg: print(msg, flush=True))
     text = sys.stdin.read().strip()
     if not text:
         sys.exit("texto vazio")
-    speak(argv[1], text)
+    load_voice()(argv[1], text)
 
 
 if __name__ == "__main__":
