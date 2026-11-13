@@ -1,0 +1,17 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "term7-dev",
+  "identifier": "br.tec.code7.term7.dev",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "term7 (dev)",
+        "width": 1000,
+        "height": 640,
+        "minWidth": 420,
+        "minHeight": 260
+      }
+    ]
+  }
+}
