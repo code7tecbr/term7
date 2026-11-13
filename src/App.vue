@@ -480,23 +480,32 @@ let voiceTimer: ReturnType<typeof setInterval> | undefined;
 /** Fixado no começo da gravação: trocar o foco enquanto fala não muda o destino. */
 let voiceTarget: PtySession | undefined;
 let voiceTab: Tab | undefined;
+/** Frase de enviar lida no começo da gravação, junto com o resto da configuração. */
+let voicePhrase = "";
 /** Abas cujo Claude recebeu um ditado: no modo "quando a pergunta foi ditada", a resposta é lida. */
 const dictatedTabs = new Set<number>();
 /** Só a fala mais recente volta o microfone pro normal (uma nova interrompe a anterior). */
 let speakSeq = 0;
 
+/** Claude da aba terminou: lê sozinho, conforme "Ler a resposta" nas configurações. */
 async function speakReply(tab: Tab) {
   const dictated = dictatedTabs.delete(tab.id);
-  const session = sessions.get(tab.id);
   const speech = (await loadSettings().catch(() => null))?.speech;
-  if (!session || !speech || speech.mode === "off") return;
+  if (!speech || speech.mode === "off") return;
   if (speech.mode === "dictated" ? !dictated : !isActive(tab)) return;
+  await speakTab(tab, false);
+}
+
+/** Lê a última resposta do Claude da aba. `manual`: pedido pelo ▶, avisa se não tem o que ler. */
+async function speakTab(tab: Tab, manual: boolean) {
+  const session = sessions.get(tab.id);
   // Gravando ou transcrevendo: falar por cima atrapalharia o ditado.
-  if (voice.value === "recording" || voice.value === "transcribing") return;
+  if (!session || voice.value === "recording" || voice.value === "transcribing") return;
   const seq = ++speakSeq;
   voice.value = "speaking";
   try {
-    await speakClaudeReply(session.id);
+    const spoke = await speakClaudeReply(session.id);
+    if (!spoke && manual && seq === speakSeq) flash("Voz: o Claude desta aba ainda não tem resposta pra ler.");
   } catch (err) {
     flash(`Voz: ${err}`);
   } finally {
@@ -504,19 +513,28 @@ async function speakReply(tab: Tab) {
   }
 }
 
+/** ▶ / Ctrl+Shift+Espaço: lê a última resposta da aba ativa, ou para a leitura. */
+function listenReply() {
+  if (voice.value === "speaking") return stopSpeaking();
+  const tab = activeTab.value;
+  if (tab?.process === "claude") speakTab(tab, true);
+  else if (tab) flash("Voz: não tem Claude rodando nesta aba.");
+}
+
+function stopSpeaking() {
+  speakSeq++;
+  voice.value = "idle";
+  speakStop().catch(() => {});
+}
+
 
 async function toggleVoice() {
-  if (voice.value === "speaking") {
-    speakSeq++;
-    voice.value = "idle";
-    speakStop().catch(() => {});
-    return;
-  }
+  if (voice.value === "speaking") return stopSpeaking();
   if (voice.value === "recording") {
     clearInterval(voiceTimer);
     voice.value = "transcribing";
     try {
-      const { text, send } = voiceCommand(await voiceStop());
+      const { text, send } = voiceCommand(await voiceStop(), voicePhrase);
       pasteInto(voiceTarget, text);
       if (voiceTab && voiceTarget && voiceTarget === sessions.get(voiceTab.id)) dictatedTabs.add(voiceTab.id);
       if (send && voiceTarget) {
@@ -539,6 +557,7 @@ async function toggleVoice() {
     settingsOpen.value = true;
     return flash(`Ditado: falta ${missing}`);
   }
+  voicePhrase = v.send_phrase;
   voiceTarget = focusedSession();
   voiceTab = activeTab.value ?? undefined;
   try {
@@ -659,6 +678,8 @@ function run(action: Action) {
       return togglePanel();
     case "toggleVoice":
       return void toggleVoice();
+    case "listenReply":
+      return listenReply();
   }
 }
 
@@ -709,6 +730,7 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
       :voice-secs="voiceSecs"
       @toggle-mcp="toggleMcp"
       @voice="toggleVoice"
+      @listen="listenReply"
       @attach="attachFiles"
       :anon="anon"
       :usage="usage"

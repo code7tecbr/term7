@@ -19,7 +19,7 @@ const props = defineProps<{
   /** Uso da assinatura do Claude da aba; null = sem Claude ou ainda lendo. */
   usage: ClaudeUsage | null;
 }>();
-defineEmits<{ toggleAgents: []; toggleTasks: []; toggleMcp: []; voice: []; attach: []; settings: []; toggleAnon: []; setupUsage: [] }>();
+defineEmits<{ toggleAgents: []; toggleTasks: []; toggleMcp: []; voice: []; listen: []; attach: []; settings: []; toggleAnon: []; setupUsage: [] }>();
 
 const clock = computed(() => `${Math.floor(props.voiceSecs / 60)}:${String(props.voiceSecs % 60).padStart(2, "0")}`);
 
@@ -147,7 +147,7 @@ const mcpCounts = computed(() => {
               ? 'Transcrevendo…'
               : voice === 'speaking'
                 ? 'Lendo a resposta do Claude: clique pra parar'
-                : 'Ditar: clique, fale e clique de novo (termine com “enviar” pra mandar)'
+                : 'Ditar (Ctrl+Espaço): clique, fale e clique de novo; termine com “term7 pronto” pra mandar'
         "
         @click="$emit('voice')"
       >
@@ -155,6 +155,17 @@ const mcpCounts = computed(() => {
         <span v-if="voice === 'recording'">{{ clock }}</span>
         <span v-else-if="voice === 'transcribing'">Transcrevendo…</span>
         <span v-else-if="voice === 'speaking'">Parar voz</span>
+      </button>
+      <button
+        v-if="claude || voice === 'speaking'"
+        class="btn icon listen"
+        :class="{ speaking: voice === 'speaking' }"
+        :disabled="voice === 'recording' || voice === 'transcribing'"
+        :title="voice === 'speaking' ? 'Parar a leitura (Ctrl+Shift+Espaço)' : 'Ouvir a última resposta do Claude desta aba (Ctrl+Shift+Espaço)'"
+        @click="$emit('listen')"
+      >
+        <svg v-if="voice === 'speaking'" viewBox="0 0 16 16" width="12" height="12"><rect x="4" y="4" width="8" height="8" rx="1.5" fill="currentColor" /></svg>
+        <svg v-else viewBox="0 0 16 16" width="12" height="12"><path d="M5 3.5v9l7.5-4.5z" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linejoin="round" /></svg>
       </button>
       <button
         class="btn icon anon-safe"
@@ -268,6 +279,10 @@ const mcpCounts = computed(() => {
   animation: pulse 1.2s ease-in-out infinite;
 }
 .mic.transcribing {
+  color: var(--accent);
+}
+.listen.speaking {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--accent);
 }
 .mic.speaking {
