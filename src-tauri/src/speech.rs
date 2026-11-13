@@ -458,7 +458,10 @@ fn speak(app: &AppHandle, text: &str) -> Result<(), String> {
 
 /// Pergunta digitada (texto ou colagem), não o resultado de uma ferramenta.
 fn is_prompt(entry: &serde_json::Value) -> bool {
-    if entry.get("isMeta").and_then(serde_json::Value::as_bool) == Some(true) {
+    // isMeta: avisos do sistema. isCompactSummary: o resumo da compactação, gravado
+    // como mensagem do usuário; a resposta antes dele continua sendo a última.
+    let flag = |k| entry.get(k).and_then(serde_json::Value::as_bool) == Some(true);
+    if flag("isMeta") || flag("isCompactSummary") {
         return false;
     }
     match entry.pointer("/message/content") {
@@ -472,8 +475,9 @@ fn is_prompt(entry: &serde_json::Value) -> bool {
 
 /// Texto da resposta à última pergunta do histórico. None se ela ainda não foi
 /// gravada: o hook de "terminou" pode chegar antes do Claude escrever o arquivo,
-/// e aí a última resposta em texto seria a da pergunta anterior.
-pub(crate) fn final_reply(jsonl: &str) -> Option<String> {
+/// e aí a última resposta em texto seria a da pergunta anterior. `any`: a última
+/// resposta, mesmo com algo depois dela (o ▶ depois de um `!comando` ou `/comando`).
+pub(crate) fn final_reply(jsonl: &str, any: bool) -> Option<String> {
     let mut reply = None;
     for entry in jsonl.lines().filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok()) {
         // Subagentes gravam no mesmo arquivo em versões antigas: não são a resposta.
@@ -481,7 +485,7 @@ pub(crate) fn final_reply(jsonl: &str) -> Option<String> {
             continue;
         }
         match entry.get("type").and_then(serde_json::Value::as_str) {
-            Some("user") if is_prompt(&entry) => reply = None,
+            Some("user") if !any && is_prompt(&entry) => reply = None,
             Some("assistant") => {
                 let text: Vec<&str> = entry
                     .pointer("/message/content")
@@ -502,13 +506,18 @@ pub(crate) fn final_reply(jsonl: &str) -> Option<String> {
 }
 
 /// Resposta à última pergunta do Claude que roda no processo `pid`, esperando
-/// até 3 s ela aparecer no histórico.
-fn last_reply(pid: u32) -> Option<String> {
+/// até 3 s ela aparecer no histórico. `manual` (o ▶): sem resposta à última
+/// pergunta, lê a anterior em vez de esperar.
+fn last_reply(pid: u32, manual: bool) -> Option<String> {
     let proc = suggest::read_proc(pid)?;
     let path = suggest::transcript(pid, &proc)?;
     for _ in 0..15 {
-        if let Some(reply) = suggest::read_tail(&path).and_then(|t| final_reply(&t)) {
+        let tail = suggest::read_tail(&path)?;
+        if let Some(reply) = final_reply(&tail, false) {
             return Some(reply);
+        }
+        if manual {
+            return final_reply(&tail, true);
         }
         thread::sleep(Duration::from_millis(200));
     }
@@ -525,9 +534,12 @@ pub async fn speak_text(app: AppHandle, text: String) -> Result<(), String> {
 /// o que ler: o "terminou" veio de um Esc ou /comando, ou (no ▶) a pergunta ainda
 /// está sem resposta.
 #[tauri::command]
-pub async fn speak_claude_reply(app: AppHandle, state: State<'_, PtyState>, id: u32) -> Result<bool, String> {
+pub async fn speak_claude_reply(app: AppHandle, state: State<'_, PtyState>, id: u32, manual: bool) -> Result<bool, String> {
     let Some(fg) = crate::pty::foreground_pid(&state, id) else { return Ok(false) };
-    tauri::async_runtime::spawn_blocking(move || match last_reply(fg) {
+    // Um "parar" (ou a troca de aba) enquanto procura a resposta também cancela.
+    let generation = app.state::<SpeechState>().generation.load(Ordering::SeqCst);
+    tauri::async_runtime::spawn_blocking(move || match last_reply(fg, manual) {
+        Some(_) if app.state::<SpeechState>().generation.load(Ordering::SeqCst) != generation => Ok(true),
         Some(reply) => speak(&app, &speakable(&reply)).map(|_| true),
         None => Ok(false),
     })
@@ -590,11 +602,11 @@ mod tests {
 {"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"..."}]},"timestamp":"2026-11-13T17:49:46.358Z"}
 {"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Resposta antiga."}]},"timestamp":"2026-11-13T17:49:48.363Z"}
 {"type":"system","subtype":"turn_duration","timestamp":"2026-11-13T17:49:48.399Z"}"#;
-        assert_eq!(final_reply(old).as_deref(), Some("Resposta antiga."));
+        assert_eq!(final_reply(old, false).as_deref(), Some("Resposta antiga."));
 
         // Pergunta nova sem a resposta gravada ainda: nada (e não a antiga).
         let asked = format!("{old}\n{}", r#"{"type":"user","message":{"role":"user","content":"Novo teste"},"timestamp":"2026-11-13T17:50:18.425Z"}"#);
-        assert_eq!(final_reply(&asked), None);
+        assert_eq!(final_reply(&asked, false), None);
 
         // Ferramenta no meio: o resultado dela não é pergunta; vale o texto final.
         let done = format!(
@@ -604,11 +616,20 @@ mod tests {
             r#"{"type":"user","isMeta":true,"message":{"role":"user","content":"<system-reminder>x</system-reminder>"}}"#,
             r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Recebi o Novo teste."}]}}"#,
         );
-        assert_eq!(final_reply(&done).as_deref(), Some("Recebi o Novo teste."));
+        assert_eq!(final_reply(&done, false).as_deref(), Some("Recebi o Novo teste."));
 
         // Colagem com imagem também é pergunta.
         let pasted = format!("{done}\n{}", r#"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"olha"},{"type":"image","source":{}}]}}"#);
-        assert_eq!(final_reply(&pasted), None);
+        assert_eq!(final_reply(&pasted, false), None);
+        // O ▶ lê a última resposta mesmo com uma pergunta (ou `!comando`) depois.
+        assert_eq!(final_reply(&pasted, true).as_deref(), Some("Recebi o Novo teste."));
+
+        // O resumo da compactação não é pergunta: a resposta de antes segue valendo.
+        let compacted = format!(
+            "{done}\n{}",
+            r#"{"parentUuid":"c7e9","isSidechain":false,"type":"user","isVisibleInTranscriptOnly":true,"isCompactSummary":true,"message":{"role":"user","content":"This session is being continued from a previous conversation that ran out of context."},"timestamp":"2026-11-13T17:30:15.452Z"}"#
+        );
+        assert_eq!(final_reply(&compacted, false).as_deref(), Some("Recebi o Novo teste."));
     }
 
     #[test]

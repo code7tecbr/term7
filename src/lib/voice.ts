@@ -1,10 +1,10 @@
 /** Frase padrão que, no fim do ditado, manda com Enter. */
 export const DEFAULT_SEND_PHRASE = "term7 pronto";
 
-// O Whisper escreve "term7" de vários jeitos: "Term 7", "Terme 7", "Term set", "termsete"...
-const TERM7_HEAD = /^ter?m[ae]?$/;
-const TERM7_NUMBER = /^(7|sete|set|seven)$/;
-const TERM7_JOINED = /^ter?m[ae]?(7|sete|set|seven)$/;
+// O Whisper escreve "term7" de vários jeitos: "Term 7", "Terme 7", "Termo 7", "Term-7", "Term set", "Terms set", "termsete"...
+const TERM7_HEAD = /^ter?m[aeo]?s?$/;
+const TERM7_NUMBER = /^(7|sete|set|seth|seven)$/;
+const TERM7_JOINED = /^ter?m[aeo]?s?-?(7|sete|set|seth|seven)$/;
 
 /** Palavra comparável: minúscula, sem acento e sem pontuação em volta. */
 function normalize(word: string) {
