@@ -76,12 +76,24 @@ pub async fn gh_runs(root: String) -> Result<GhResult, String> {
     .map_err(|e| e.to_string())
 }
 
+/// Link que o `xdg-open` pode abrir: web, ou página HTML local (relatórios gerados por ferramentas).
+fn is_openable(url: &str) -> bool {
+    if url.starts_with("https://") || url.starts_with("http://") {
+        return true;
+    }
+    // De arquivo local, só HTML: o xdg-open num file:// qualquer abriria scripts e executáveis.
+    let Some(path) = url.strip_prefix("file:///") else {
+        return false;
+    };
+    let path = path.split(['#', '?']).next().unwrap_or("").to_ascii_lowercase();
+    path.ends_with(".html") || path.ends_with(".htm")
+}
+
 /// Abre um link no navegador padrão.
 #[tauri::command]
 pub fn open_url(url: String) -> Result<(), String> {
-    // Só links web: o xdg-open também abriria arquivos e executáveis locais.
-    if !url.starts_with("https://") && !url.starts_with("http://") {
-        return Err("só links http(s) podem ser abertos".into());
+    if !is_openable(&url) {
+        return Err("só links http(s) ou páginas HTML locais podem ser abertos".into());
     }
     let mut child = Command::new("xdg-open")
         .arg(&url)
@@ -93,4 +105,25 @@ pub fn open_url(url: String) -> Result<(), String> {
     // Espera em outra thread só pra não deixar processo zumbi.
     std::thread::spawn(move || child.wait());
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn opens_web_and_local_html_only() {
+        assert!(is_openable("https://github.com/org/repo/pull/1"));
+        assert!(is_openable("http://localhost:5173/"));
+        assert!(is_openable("file:///home/user/projeto/thoughts/board/triage/pr-626-review.html"));
+        assert!(is_openable("file:///tmp/relatorio.HTM#secao"));
+
+        assert!(!is_openable("file:///home/user/script.sh"));
+        assert!(!is_openable("file:///usr/bin/xterm"));
+        assert!(!is_openable("file:///home/user/app.desktop"));
+        assert!(!is_openable("file:///tmp/x.html.sh"));
+        assert!(!is_openable("file://host/share/x.html"));
+        assert!(!is_openable("javascript:alert(1)"));
+        assert!(!is_openable("/home/user/x.html"));
+    }
 }
