@@ -117,3 +117,20 @@ export type AgentStep =
   | { kind: "text"; text: string }
   | { kind: "tool"; name: string; summary: string; detail: string | null; result: string | null; error: boolean };
 export const claudeAgentSteps = (id: number, agent: string) => invoke<AgentStep[]>("claude_agent_steps", { id, agent });
+
+export type TaskStatus = "running" | "done" | "failed" | "stopped" | "ended";
+/** Comando que o Claude da aba rodou em segundo plano (Bash com run_in_background). */
+export interface BgTask {
+  id: string;
+  command: string;
+  description: string;
+  status: TaskStatus;
+  exit_code: number | null;
+  started: string | null;
+  /** Última escrita no log, em segundos desde 1970. */
+  updated: number | null;
+  size: number;
+}
+export const claudeTasks = (id: number) => invoke<BgTask[]>("claude_tasks", { id });
+/** Fim do log da tarefa, sem cores; truncated = o log é maior que o trecho. */
+export const claudeTaskLog = (id: number, task: string) => invoke<{ text: string; truncated: boolean }>("claude_task_log", { id, task });

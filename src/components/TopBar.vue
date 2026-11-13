@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import type { Agent, ClaudeUsage, UsageWindow } from "../lib/pty";
+import type { Agent, BgTask, ClaudeUsage, UsageWindow } from "../lib/pty";
 
 /** Barra de cima: o que é do Claude da aba ativa (agentes e MCPs). A de baixo fica com pasta, git e PR. */
 const props = defineProps<{
@@ -8,6 +8,8 @@ const props = defineProps<{
   claude: boolean;
   agents: Agent[] | null;
   agentsOpen: boolean;
+  tasks: BgTask[] | null;
+  tasksOpen: boolean;
   mcp: { servers: { status: string }[] | null; loading: boolean } | null;
   mcpOpen: boolean;
   /** Ditado: parado, gravando (com os segundos) ou esperando a transcrição. */
@@ -17,7 +19,7 @@ const props = defineProps<{
   /** Uso da assinatura do Claude da aba; null = sem Claude ou ainda lendo. */
   usage: ClaudeUsage | null;
 }>();
-defineEmits<{ toggleAgents: []; toggleMcp: []; voice: []; attach: []; settings: []; toggleAnon: []; setupUsage: [] }>();
+defineEmits<{ toggleAgents: []; toggleTasks: []; toggleMcp: []; voice: []; attach: []; settings: []; toggleAnon: []; setupUsage: [] }>();
 
 const clock = computed(() => `${Math.floor(props.voiceSecs / 60)}:${String(props.voiceSecs % 60).padStart(2, "0")}`);
 
@@ -59,6 +61,7 @@ const usageTitle = computed(() => {
 const level = (used: number) => (used >= 90 ? "l5" : used >= 70 ? "l4" : used >= 50 ? "l3" : used >= 30 ? "l2" : "l1");
 
 const running = computed(() => props.agents?.filter((a) => a.status === "running").length ?? 0);
+const tasksRunning = computed(() => props.tasks?.filter((t) => t.status === "running").length ?? 0);
 
 const mcpCounts = computed(() => {
   const servers = props.mcp?.servers ?? [];
@@ -87,6 +90,18 @@ const mcpCounts = computed(() => {
         <span class="label">Agentes</span>
         <span v-if="running" class="running"><span class="pulse" />{{ running }} rodando</span>
         <span v-else class="muted">{{ agents.length }}</span>
+      </button>
+      <button
+        v-if="claude && tasks?.length"
+        class="btn"
+        data-tasks-toggle
+        :class="{ open: tasksOpen }"
+        title="Comandos que o Claude desta aba rodou em segundo plano"
+        @click="$emit('toggleTasks')"
+      >
+        <span class="label">Tarefas</span>
+        <span v-if="tasksRunning" class="running"><span class="pulse" />{{ tasksRunning }} rodando</span>
+        <span v-else class="muted">{{ tasks.length }}</span>
       </button>
       <button v-if="claude" class="btn" data-mcp-toggle :class="{ open: mcpOpen }" title="Servidores MCP do Claude desta aba" @click="$emit('toggleMcp')">
         <span class="label">MCP</span>
