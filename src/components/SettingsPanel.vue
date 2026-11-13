@@ -26,6 +26,7 @@ const voice = reactive<VoiceSettings>({
   local_model: "",
   language: "",
   auto_stop: true,
+  send_phrase: "term7 pronto",
 });
 const hasKey = ref(false);
 /** Chave digitada agora; vazio = mantém a salva. */
@@ -189,7 +190,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
           <h2>Ditado por voz</h2>
           <p class="hint">
             O microfone da barra de cima (ou <b>Ctrl+Espaço</b>) grava, transcreve e cola o texto no terminal ativo, inclusive
-            no Claude (sem Enter). Termine a fala com <b>“enviar”</b> pra mandar com Enter.
+            no Claude (sem Enter). Termine a fala com a frase de enviar (abaixo) pra mandar com Enter.
           </p>
 
           <div class="engines">
@@ -254,6 +255,15 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
             <small>Código ISO; vazio deixa o serviço detectar.</small>
           </label>
 
+          <label class="field">
+            <span>Frase de enviar</span>
+            <input v-model.trim="voice.send_phrase" placeholder="term7 pronto" spellcheck="false" />
+            <small>
+              Dita no fim, manda com Enter. “term7” aceita como o Whisper escreve (Term 7, Terme 7, Term set, term sete);
+              acento e pontuação não importam. Vazia desliga.
+            </small>
+          </label>
+
           <label class="check">
             <input v-model="voice.auto_stop" type="checkbox" />
             <span>
@@ -266,14 +276,15 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
         <section>
           <h2>Leitura em voz alta</h2>
           <p class="hint">
-            Lê a resposta do Claude quando ele termina, sem blocos de código, tabelas e links. Respostas longas são lidas só
-            no começo. Enquanto fala, o microfone da barra vira o botão de parar.
+            Lê a resposta do Claude quando ele termina, sem blocos de código, tabelas e links. Pela API, respostas longas são
+            lidas só no começo (por causa da cota); a voz local lê inteira. O <b>▶</b> ao lado do microfone (ou
+            <b>Ctrl+Shift+Espaço</b>) lê a última resposta da aba na hora e, falando, vira o botão de parar.
           </p>
 
           <label class="field">
             <span>Ler a resposta</span>
             <select v-model="speech.mode">
-              <option value="off">Nunca</option>
+              <option value="off">Só quando eu pedir (▶ ou Ctrl+Shift+Espaço)</option>
               <option value="dictated">Quando a pergunta foi ditada</option>
               <option value="always">Sempre que o Claude da aba ativa terminar</option>
             </select>

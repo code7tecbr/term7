@@ -29,9 +29,10 @@ const CHUNK_CHARS: usize = 200;
 /// Nada toca até o primeiro trecho chegar inteiro: curto, a fala começa logo e
 /// os seguintes são gerados enquanto ele toca.
 const FIRST_CHUNK_CHARS: usize = 80;
-/// Resposta longa vira minutos de áudio, custo e cota (o Groq gratuito dá 100
-/// pedidos por dia e 1.200 tokens por minuto): lê só o começo.
-const MAX_CHARS: usize = 600;
+/// Pela API, resposta longa vira custo e cota (o Groq gratuito dá 100 pedidos por
+/// dia e 1.200 tokens por minuto): lê só o começo. A voz local lê tudo: só gera um
+/// trecho à frente, então parar no meio não desperdiça nada.
+const API_MAX_CHARS: usize = 600;
 /// Tentativas por trecho quando a API pede pra esperar (429) ou falha do lado dela (5xx).
 const ATTEMPTS: usize = 3;
 /// Espera máxima por tentativa: mais que isso, a leitura já perdeu o sentido.
@@ -411,7 +412,11 @@ fn speak(app: &AppHandle, text: &str) -> Result<(), String> {
     let current = || state.generation.load(Ordering::SeqCst) == generation;
 
     let engine = Arc::new(engine(&settings::load(app))?);
-    let parts = chunks(text, FIRST_CHUNK_CHARS, CHUNK_CHARS, MAX_CHARS);
+    let limit = match &*engine {
+        Engine::Api(_) => API_MAX_CHARS,
+        Engine::Local { .. } => usize::MAX,
+    };
+    let parts = chunks(text, FIRST_CHUNK_CHARS, CHUNK_CHARS, limit);
     let request = |i: usize| -> Job {
         let (app, engine, text, path) = (app.clone(), engine.clone(), parts[i].clone(), tmp_path(&format!("{generation}-{i}.wav")));
         thread::spawn(move || {
@@ -516,16 +521,15 @@ pub async fn speak_text(app: AppHandle, text: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || speak(&app, &speakable(&text))).await.map_err(|e| e.to_string())?
 }
 
-/// Lê em voz alta a última resposta do Claude da aba.
+/// Lê em voz alta a última resposta do Claude da aba. `false` quando não havia
+/// o que ler: o "terminou" veio de um Esc ou /comando, ou (no ▶) a pergunta ainda
+/// está sem resposta.
 #[tauri::command]
-pub async fn speak_claude_reply(app: AppHandle, state: State<'_, PtyState>, id: u32) -> Result<(), String> {
-    let Some(fg) = crate::pty::foreground_pid(&state, id) else { return Ok(()) };
-    tauri::async_runtime::spawn_blocking(move || {
-        // Sem resposta em texto (o "terminou" veio de um Esc ou de um /comando): nada a ler.
-        match last_reply(fg) {
-            Some(reply) => speak(&app, &speakable(&reply)),
-            None => Ok(()),
-        }
+pub async fn speak_claude_reply(app: AppHandle, state: State<'_, PtyState>, id: u32) -> Result<bool, String> {
+    let Some(fg) = crate::pty::foreground_pid(&state, id) else { return Ok(false) };
+    tauri::async_runtime::spawn_blocking(move || match last_reply(fg) {
+        Some(reply) => speak(&app, &speakable(&reply)).map(|_| true),
+        None => Ok(false),
     })
     .await
     .map_err(|e| e.to_string())?
