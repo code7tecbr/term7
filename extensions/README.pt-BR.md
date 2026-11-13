@@ -79,7 +79,8 @@ a cada minuto. Com o term7 fechado, ele só tenta de novo na volta seguinte.
 
 Lê as respostas do Claude em voz alta com o [Kokoro-82M](https://github.com/thewh1teagle/kokoro-onnx), gerado na
 própria máquina: sem internet, sem cota e sem o texto sair do computador. Diferente das outras, essa extensão não usa a
-API: quem chama é o próprio term7, a cada trecho da resposta.
+API: o term7 abre ela uma vez por leitura (`--serve`), então o modelo carrega uma vez só e os próximos trechos são
+gerados enquanto o atual toca.
 
 Instale pela tela (Configurações → Extensões → Voz local). A instalação cria um venv em `~/.local/share/term7/kokoro`
 com o `kokoro-onnx` e baixa o modelo int8 (~120 MB). Depois, em Configurações → Leitura em voz alta, escolha
@@ -89,6 +90,7 @@ com o `kokoro-onnx` e baixa o modelo int8 (~120 MB). Depois, em Configurações 
   (`af_heart`, `am_michael`…).
 - **Velocidade:** 1.0 é o normal; 0.8 fala mais devagar.
 - **Núcleos da CPU:** quantos usar pra gerar (padrão 4). Cada resposta lida ocupa a CPU por alguns segundos.
+  Com 1 núcleo a geração fica quase no ritmo da fala; use 2 ou mais se ouvir pausas.
 - Testar fora do term7: `echo "Olá" | python3 /usr/share/term7/extensions/kokoro/term7-kokoro /tmp/ola.wav`
 - Remover: pela tela, ou apagar `~/.local/share/term7/kokoro` e `~/.config/term7/kokoro.env`.
 

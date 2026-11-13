@@ -17,6 +17,23 @@ ext = importlib.util.module_from_spec(spec)
 loader.exec_module(ext)
 
 
+class Servidor(unittest.TestCase):
+    def test_um_pedido_por_linha_e_erro_nao_derruba(self):
+        made, replies = [], []
+
+        def speak(out, text):
+            if text == "quebra":
+                raise ValueError("voz\ninexistente")
+            made.append((out, text))
+
+        lines = ['{"text": "Olá.", "out": "/t/0.wav"}\n', "\n", "não é json\n", '{"text": "quebra", "out": "/t/1.wav"}\n', '{"text": "Fim.", "out": "/t/2.wav"}\n']
+        ext.serve(speak, lines, replies.append)
+        self.assertEqual(made, [("/t/0.wav", "Olá."), ("/t/2.wav", "Fim.")])
+        self.assertEqual(replies[0], "ok")
+        self.assertTrue(replies[1].startswith("erro: "))
+        self.assertEqual(replies[2:], ["erro: voz inexistente", "ok"])
+
+
 class Configuracao(unittest.TestCase):
     def test_le_o_arquivo_que_o_term7_grava(self):
         # Formato do render_env do extensions.rs.
