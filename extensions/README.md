@@ -78,7 +78,8 @@ statusbot every minute. While term7 is closed, it just tries again on the next r
 
 Reads Claude's replies aloud with [Kokoro-82M](https://github.com/thewh1teagle/kokoro-onnx), generated on your own
 machine: no internet, no quota, and the text never leaves the computer. Unlike the others, this extension doesn't use
-the API: term7 itself calls it for each chunk of the reply.
+the API: term7 opens it once per reading (`--serve`), so the model loads once and the next chunks are generated
+while the current one plays.
 
 Install it from the screen (Settings → Extensions → Local voice). Installing creates a venv in
 `~/.local/share/term7/kokoro` with `kokoro-onnx` and downloads the int8 model (~120 MB). Then, in Settings → Read
@@ -88,7 +89,7 @@ aloud, pick “Local voice (extension)”.
   the English voices (`af_heart`, `am_michael`…).
 - **Speed:** 1.0 is normal; 0.8 speaks slower.
 - **CPU cores:** how many to use while generating (default 4). Each reply read aloud keeps the CPU busy for a few
-  seconds.
+  seconds. With 1 core generation barely keeps up with speech; use 2 or more if you hear pauses.
 - Try it outside term7: `echo "Hello" | python3 /usr/share/term7/extensions/kokoro/term7-kokoro /tmp/hello.wav`
 - Remove: from the screen, or delete `~/.local/share/term7/kokoro` and `~/.config/term7/kokoro.env`.
 
