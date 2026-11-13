@@ -65,7 +65,8 @@ export const SPEECH_PRESETS = [
 /** Voltam quando a fala acaba ou é interrompida. */
 export const speakText = (text: string) => invoke<void>("speak_text", { text });
 /** false quando não havia resposta pra ler. */
-export const speakClaudeReply = (id: number) => invoke<boolean>("speak_claude_reply", { id });
+/** `manual` (o ▶): sem resposta à última pergunta, lê a anterior. */
+export const speakClaudeReply = (id: number, manual = false) => invoke<boolean>("speak_claude_reply", { id, manual });
 export const speakStop = () => invoke<void>("speak_stop");
 /** Extensões de voz instaladas: [id, nome]. */
 export const installedTts = () => invoke<[string, string][]>("extensions_tts");

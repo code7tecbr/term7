@@ -4,7 +4,7 @@ import { voiceCommand } from "./voice";
 describe("frase de enviar do ditado", () => {
   it("aceita os jeitos que o Whisper escreve term7", () => {
     // Variações tiradas de ditados reais.
-    for (const end of ["term7 pronto", "Term 7, pronto.", "Terme 7 pronto!", "Term set pronto", "term sete, pronto", "Termsete pronto.", "TERM7 PRONTO"]) {
+    for (const end of ["term7 pronto", "Term 7, pronto.", "Terme 7 pronto!", "Term set pronto", "term sete, pronto", "Termsete pronto.", "TERM7 PRONTO", "Termo 7, pronto.", "Termo sete pronto", "Term-7 pronto.", "Terms set pronto", "Term Seth, pronto."]) {
       expect(voiceCommand(`Roda os testes do login. ${end}`)).toEqual({ text: "Roda os testes do login", send: true });
     }
   });
