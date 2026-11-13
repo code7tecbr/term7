@@ -486,6 +486,8 @@ let voicePhrase = "";
 const dictatedTabs = new Set<number>();
 /** Só a fala mais recente volta o microfone pro normal (uma nova interrompe a anterior). */
 let speakSeq = 0;
+/** Aba sendo lida: sair dela cancela a leitura. */
+let speakingTab: number | undefined;
 
 /** Claude da aba terminou: lê sozinho, conforme "Ler a resposta" nas configurações. */
 async function speakReply(tab: Tab) {
@@ -502,9 +504,10 @@ async function speakTab(tab: Tab, manual: boolean) {
   // Gravando ou transcrevendo: falar por cima atrapalharia o ditado.
   if (!session || voice.value === "recording" || voice.value === "transcribing") return;
   const seq = ++speakSeq;
+  speakingTab = tab.id;
   voice.value = "speaking";
   try {
-    const spoke = await speakClaudeReply(session.id);
+    const spoke = await speakClaudeReply(session.id, manual);
     if (!spoke && manual && seq === speakSeq) flash("Voz: o Claude desta aba ainda não tem resposta pra ler.");
   } catch (err) {
     flash(`Voz: ${err}`);
@@ -523,10 +526,18 @@ function listenReply() {
 
 function stopSpeaking() {
   speakSeq++;
+  speakingTab = undefined;
   voice.value = "idle";
   speakStop().catch(() => {});
 }
 
+
+watch(
+  () => activeTab.value?.id,
+  (id) => {
+    if (voice.value === "speaking" && speakingTab !== undefined && speakingTab !== id) stopSpeaking();
+  },
+);
 
 async function toggleVoice() {
   if (voice.value === "speaking") return stopSpeaking();
