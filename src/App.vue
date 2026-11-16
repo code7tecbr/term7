@@ -304,7 +304,9 @@ async function pollAgents() {
   const busy = agentsOpen.value || agentView.value || agents.value?.some((a) => a.status === "running");
   if (!busy && Date.now() - agentsAt < 10_000) return;
   agentsAt = Date.now();
-  agents.value = await claudeAgents(session.id).catch(() => agents.value);
+  const list = await claudeAgents(session.id).catch(() => undefined);
+  // Trocou de aba enquanto buscava: a resposta é da aba anterior.
+  if (list && activeTab.value === tab) agents.value = list;
 }
 const agentsTimer = setInterval(pollAgents, 2000);
 
@@ -327,7 +329,8 @@ async function pollTasks() {
   const busy = tasksOpen.value || taskView.value || tasks.value?.some((t) => t.status === "running");
   if (!busy && Date.now() - tasksAt < 10_000) return;
   tasksAt = Date.now();
-  tasks.value = await claudeTasks(session.id).catch(() => tasks.value);
+  const list = await claudeTasks(session.id).catch(() => undefined);
+  if (list && activeTab.value === tab) tasks.value = list;
 }
 const tasksTimer = setInterval(pollTasks, 2000);
 
@@ -337,7 +340,8 @@ async function pollUsage() {
   const tab = activeTab.value;
   const session = tab && sessions.get(tab.id);
   if (tab?.process !== "claude" || !session) return void (usage.value = null);
-  usage.value = await claudeUsage(session.id).catch(() => usage.value);
+  const next = await claudeUsage(session.id).catch(() => undefined);
+  if (next !== undefined && activeTab.value === tab) usage.value = next;
 }
 // O arquivo só muda a cada resposta do Claude: 15 s basta.
 const usageTimer = setInterval(pollUsage, 15_000);
