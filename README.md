@@ -49,6 +49,8 @@ including its subagents, MCP servers and usage limits.
 
 **Claude Code**
 - The tab shows when Claude is working, waiting for you or done (via hooks).
+- Overview (Ctrl+Shift+O or the top-bar button): one card per tab with Claude, by group, with its state, what it is
+  doing and the running subagents. Click a card to watch its terminal live, reply (typing or dictating) or jump to the tab.
 - Subagents menu, the MCP servers of the tab's project (connected, needs auth, failed) and commands
   suggested by Claude as ▶ buttons, ready to run in the bottom terminal.
 - Usage in the top bar: context window, 5-hour and weekly limits, and per-model limits.

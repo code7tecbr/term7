@@ -29,6 +29,7 @@ const FileView = defineAsyncComponent(() => import("./components/FileView.vue"))
 // Sob demanda: traz o marked e o DOMPurify só quando o popup abre.
 const AgentSteps = defineAsyncComponent(() => import("./components/AgentSteps.vue"));
 const TaskLog = defineAsyncComponent(() => import("./components/TaskLog.vue"));
+const Overview = defineAsyncComponent(() => import("./components/Overview.vue"));
 import {
   claudeAgents,
   claudeTasks,
@@ -48,9 +49,12 @@ import {
 import { matchShortcut, type Action } from "./lib/shortcuts";
 import { useGitStatus } from "./lib/useGitStatus";
 import { useGithub } from "./lib/useGithub";
-import { startApi } from "./lib/api";
+import { claudeState, startApi } from "./lib/api";
+import { noteState } from "./lib/overview";
+import { dictationSink, type DictationSink } from "./state/dictation";
 import { restoreSession, saveSession, snapshot } from "./state/session";
 import {
+  activate,
   activeTab,
   closePanel,
   closeTab,
@@ -484,6 +488,8 @@ let voiceTimer: ReturnType<typeof setInterval> | undefined;
 /** Fixado no começo da gravação: trocar o foco enquanto fala não muda o destino. */
 let voiceTarget: PtySession | undefined;
 let voiceTab: Tab | undefined;
+/** Ditado começado com o popup da visão geral aberto: o texto vai pro campo dele. */
+let voiceSink: DictationSink | null = null;
 /** Frase de enviar lida no começo da gravação, junto com o resto da configuração. */
 let voicePhrase = "";
 /** Abas cujo Claude recebeu um ditado: no modo "quando a pergunta foi ditada", a resposta é lida. */
@@ -550,6 +556,10 @@ async function toggleVoice() {
     voice.value = "transcribing";
     try {
       const { text, send } = voiceCommand(await voiceStop(), voicePhrase);
+      if (voiceSink) {
+        dictatedTabs.add(voiceSink.tabId);
+        return voiceSink.put(text, send);
+      }
       pasteInto(voiceTarget, text);
       if (voiceTab && voiceTarget && voiceTarget === sessions.get(voiceTab.id)) dictatedTabs.add(voiceTab.id);
       if (send && voiceTarget) {
@@ -575,6 +585,7 @@ async function toggleVoice() {
   voicePhrase = v.send_phrase;
   voiceTarget = focusedSession();
   voiceTab = activeTab.value ?? undefined;
+  voiceSink = dictationSink.value;
   try {
     await voiceStart();
   } catch (err) {
@@ -673,6 +684,31 @@ function resizePanel(e: PointerEvent, tab: Tab) {
   });
 }
 
+// ---- visão geral (Ctrl+Shift+O): todas as abas com Claude ----
+const overviewOpen = ref(false);
+// Marca a hora de cada troca de estado, mesmo com a visão geral fechada (o "há 3min" do card).
+watch(
+  () => store.tabs.map((t) => [t.id, claudeState(t)] as const),
+  (list) => list.forEach(([id, state]) => noteState(id, state)),
+  { immediate: true },
+);
+
+function overviewGo(tabId: number) {
+  overviewOpen.value = false;
+  activate(tabId);
+  const tab = activeTab.value;
+  if (tab) (tab.view = -1), (tab.focusedPane = "main");
+}
+
+/** Resposta digitada no popup: colada e enviada, como faz a API das extensões. */
+function overviewSend(tabId: number, text: string) {
+  const tab = store.tabs.find((t) => t.id === tabId);
+  const session = tab && sessions.get(tab.id);
+  if (!session) return;
+  pasteInto(session, text);
+  setTimeout(() => session.write("\r").catch(() => {}), 80);
+}
+
 // ---- atalhos ----
 function run(action: Action) {
   switch (action.type) {
@@ -695,6 +731,9 @@ function run(action: Action) {
       return void toggleVoice();
     case "listenReply":
       return listenReply();
+    case "toggleOverview":
+      overviewOpen.value = !overviewOpen.value;
+      return;
   }
 }
 
@@ -752,6 +791,8 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
       @setup-usage="setupUsage(true)"
       @settings="settingsOpen = true"
       @toggle-anon="anon = !anon"
+      :waiting="store.tabs.filter((t) => claudeState(t) === 'waiting').length"
+      @overview="overviewOpen = !overviewOpen"
     />
     <div class="body">
       <TabSidebar :home="home" :style="{ width: sidebarWidth + 'px' }" />
@@ -766,7 +807,7 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
               <div class="layer" :class="{ shown: tab.view === -1 }">
                 <TerminalView
                   :cwd="tab.initialCwd"
-                  :focused="isActive(tab) && tab.focusedPane === 'main' && tab.view === -1"
+                  :focused="isActive(tab) && tab.focusedPane === 'main' && tab.view === -1 && !overviewOpen"
                   @focus="tab.focusedPane = 'main'"
                   @spawned="sessions.set(tab.id, $event)"
                   @open-path="openPath(tab, $event)"
@@ -804,7 +845,7 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
               <div class="panel-term">
                 <TerminalView
                   :cwd="tab.panelCwd"
-                  :focused="isActive(tab) && tab.panelOpen && tab.focusedPane === 'panel'"
+                  :focused="isActive(tab) && tab.panelOpen && tab.focusedPane === 'panel' && !overviewOpen"
                   @focus="tab.focusedPane = 'panel'"
                   @spawned="onPanelSpawned(tab.id, $event)"
                   @open-path="openPath(tab, $event)"
@@ -856,6 +897,19 @@ const isActive = (tab: Tab) => tab.id === store.activeId;
       :status="git"
       @close="popup = null"
       @open-tab="popupToTab"
+    />
+    <Overview
+      v-if="overviewOpen"
+      :tabs="store.tabs"
+      :groups="store.groups"
+      :title="(tab: Tab) => tabTitle(tab, home)"
+      :pty-of="(tab: Tab) => sessions.get(tab.id)?.id"
+      @close="overviewOpen = false"
+      @go="overviewGo"
+      @send="overviewSend"
+      :voice="voice"
+      :voice-secs="voiceSecs"
+      @voice="toggleVoice"
     />
     <CloseConfirm v-if="closePrompt" :items="closePrompt" @cancel="closePrompt = null" @confirm="confirmClose" />
     <SettingsPanel v-if="settingsOpen" @close="settingsOpen = false"
