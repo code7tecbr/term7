@@ -16,3 +16,10 @@ describe("atalhos de voz", () => {
     expect(matchShortcut(key({ key: " ", code: "Space", ctrlKey: true, altKey: true }))).toBeNull();
   });
 });
+
+describe("visão geral", () => {
+  it("Ctrl+Shift+O abre e fecha; Ctrl+O vai pro terminal", () => {
+    expect(matchShortcut(key({ key: "O", ctrlKey: true, shiftKey: true }))).toEqual({ type: "toggleOverview" });
+    expect(matchShortcut(key({ key: "o", ctrlKey: true }))).toBeNull();
+  });
+});

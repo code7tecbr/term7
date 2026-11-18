@@ -49,6 +49,9 @@ subagentes, os servidores MCP e os limites de uso.
 
 **Claude Code**
 - A aba mostra quando o Claude está trabalhando, esperando você ou terminou (via hooks).
+- Visão geral (Ctrl+Shift+O ou o botão da barra de cima): um card por aba com Claude, por grupo, com o estado, o que
+  ele está fazendo e os subagentes rodando. Clique num card pra ver o terminal ao vivo, responder (digitando ou ditando)
+  ou ir pra aba.
 - Menu de subagentes, os servidores MCP do projeto da aba (conectados, precisam de autenticação, falharam) e
   os comandos que o Claude sugeriu como botões ▶, prontos pra rodar no terminal de baixo.
 - Uso na barra de cima: janela de contexto, limites de 5 horas e da semana, e limites por modelo.

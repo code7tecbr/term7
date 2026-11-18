@@ -7,7 +7,8 @@ export type Action =
   | { type: "toggleDiff" }
   | { type: "togglePanel" }
   | { type: "toggleVoice" }
-  | { type: "listenReply" };
+  | { type: "listenReply" }
+  | { type: "toggleOverview" };
 
 /** Atalhos globais do app. Retorna null quando a tecla deve ir pro shell. */
 export function matchShortcut(e: KeyboardEvent): Action | null {
@@ -18,6 +19,8 @@ export function matchShortcut(e: KeyboardEvent): Action | null {
   if (ctrlShift && key === "t") return { type: "newTab" };
   if (ctrlShift && key === "w") return { type: "closeTab" };
   if (ctrlShift && key === "g") return { type: "toggleDiff" };
+  // Visão geral: todas as abas com Claude de uma vez.
+  if (ctrlShift && key === "o") return { type: "toggleOverview" };
   // Ditado: mesmo que clicar no microfone (começa, para ou corta a leitura em voz alta).
   if (ctrlOnly && (e.code === "Space" || e.key === " ")) return { type: "toggleVoice" };
   // Ouvir a última resposta do Claude da aba (ou parar a leitura).

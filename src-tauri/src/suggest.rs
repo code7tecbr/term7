@@ -49,7 +49,7 @@ pub(crate) fn read_proc(pid: u32) -> Option<Proc> {
     Some(Proc { cwd, env })
 }
 
-fn config_dir(env: &HashMap<String, String>) -> Option<PathBuf> {
+pub(crate) fn config_dir(env: &HashMap<String, String>) -> Option<PathBuf> {
     env.get("CLAUDE_CONFIG_DIR")
         .map(PathBuf::from)
         .or_else(|| env.get("HOME").map(|h| Path::new(h).join(".claude")))
