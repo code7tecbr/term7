@@ -16,6 +16,7 @@ import TasksMenu from "./components/TasksMenu.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
 import { loadSettings, pickFiles, shellQuote, speakClaudeReply, speakStop, voiceCancel, voiceStart, voiceStop } from "./lib/settings";
 import { voiceCommand } from "./lib/voice";
+import { serialQueue } from "./lib/queue";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { anon } from "./state/anon";
@@ -499,13 +500,17 @@ let speakSeq = 0;
 /** Aba sendo lida: sair dela cancela a leitura. */
 let speakingTab: number | undefined;
 
+/** Leituras automáticas, uma de cada vez. */
+const speechQueue = serialQueue();
+
 /** Claude da aba terminou: lê sozinho, conforme "Ler a resposta" nas configurações. */
 async function speakReply(tab: Tab) {
   const dictated = dictatedTabs.delete(tab.id);
   const speech = (await loadSettings().catch(() => null))?.speech;
   if (!speech || speech.mode === "off") return;
   if (speech.mode === "dictated" ? !dictated : !isActive(tab)) return;
-  await speakTab(tab, false);
+  // Na fila: a resposta de outra aba espera a que está sendo lida acabar, em vez de cortá-la.
+  await speechQueue.add(() => speakTab(tab, false));
 }
 
 /** Lê a última resposta do Claude da aba. `manual`: pedido pelo ▶, avisa se não tem o que ler. */
@@ -534,7 +539,9 @@ function listenReply() {
   else if (tab) flash("Voz: não tem Claude rodando nesta aba.");
 }
 
-function stopSpeaking() {
+/** `keepQueue`: só corta a leitura atual (saiu da aba); as outras respostas na fila continuam. */
+function stopSpeaking(keepQueue = false) {
+  if (!keepQueue) speechQueue.clear();
   speakSeq++;
   speakingTab = undefined;
   voice.value = "idle";
@@ -545,7 +552,7 @@ function stopSpeaking() {
 watch(
   () => activeTab.value?.id,
   (id) => {
-    if (voice.value === "speaking" && speakingTab !== undefined && speakingTab !== id) stopSpeaking();
+    if (voice.value === "speaking" && speakingTab !== undefined && speakingTab !== id) stopSpeaking(true);
   },
 );
 
