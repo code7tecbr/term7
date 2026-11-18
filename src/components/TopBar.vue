@@ -18,8 +18,10 @@ const props = defineProps<{
   anon: boolean;
   /** Uso da assinatura do Claude da aba; null = sem Claude ou ainda lendo. */
   usage: ClaudeUsage | null;
+  /** Abas com Claude esperando resposta: aparece no botão da visão geral. */
+  waiting: number;
 }>();
-defineEmits<{ toggleAgents: []; toggleTasks: []; toggleMcp: []; voice: []; listen: []; attach: []; settings: []; toggleAnon: []; setupUsage: [] }>();
+defineEmits<{ overview: []; toggleAgents: []; toggleTasks: []; toggleMcp: []; voice: []; listen: []; attach: []; settings: []; toggleAnon: []; setupUsage: [] }>();
 
 const clock = computed(() => `${Math.floor(props.voiceSecs / 60)}:${String(props.voiceSecs % 60).padStart(2, "0")}`);
 
@@ -76,7 +78,15 @@ const mcpCounts = computed(() => {
 
 <template>
   <header class="topbar">
-    <span class="title" :title="title">{{ title }}</span>
+    <!-- Separado dos botões do Claude da aba: a visão geral é de todas as abas. -->
+    <div class="left">
+      <button class="btn" @mousedown.prevent title="Visão geral: todas as abas com Claude (Ctrl+Shift+O)" @click="$emit('overview')">
+        <svg viewBox="0 0 16 16" width="13" height="13"><rect x="1.75" y="1.75" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3" /><rect x="9.25" y="1.75" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3" /><rect x="1.75" y="9.25" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3" /><rect x="9.25" y="9.25" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.3" /></svg>
+        <span class="label">Visão geral</span>
+        <span v-if="waiting" class="auth" :title="`${waiting} ${waiting === 1 ? 'aba esperando' : 'abas esperando'} você`">⚠ {{ waiting }}</span>
+      </button>
+      <span class="title" :title="title">{{ title }}</span>
+    </div>
 
     <div class="right" @mousedown.prevent>
       <button
@@ -204,6 +214,15 @@ const mcpCounts = computed(() => {
   color: var(--fg);
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+.left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.left .btn {
+  flex-shrink: 0;
 }
 .right {
   display: flex;

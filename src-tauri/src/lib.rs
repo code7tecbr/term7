@@ -7,6 +7,7 @@ mod claude;
 mod files;
 mod gh;
 mod git;
+mod overview;
 mod pty;
 mod session;
 mod settings;
@@ -52,6 +53,7 @@ pub fn run() {
             usage::claude_usage,
             usage::claude_usage_setup,
             suggest::claude_suggestions,
+            overview::claude_peek,
             agents::claude_agents,
             agents::claude_agent_steps,
             tasks::claude_tasks,
